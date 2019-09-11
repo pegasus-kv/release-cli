@@ -32,16 +32,20 @@ Or you can download [pre-built release] that is suitable for your platform.
 
 ## Usage
 
-To specify multiple pull requests to version 1.11.7 of Pegasus:
+To specify the pull requests to 1.11 of Pegasus:
 
 ```sh
-./release-cli --repo '/home/wutao1/pegasus' --version '1.11.7' --pr-list='242,243,246'
+./release-cli --repo '/home/wutao1/pegasus' --branch '1.11' --pr-list='242,243,246'
+./release-cli --repo '/home/wutao1/pegasus' --branch '1.11' --pr=245
 ```
 
-To specify a single pull request to version 1.11.7:
+This command will cherry-pick the corresponding commits to the 1.11 branch.
 
-```sh
-./release-cli --repo '/home/wutao1/pegasus' --version '1.11.7' --pr=245
+To undo the cherry-picks:
+
+```
+./release-cli --repo '/home/wutao1/pegasus' --branch '1.11' --del-pr=245
+./release-cli --repo '/home/wutao1/pegasus' --branch '1.11' --del-pr-list='246,242'
 ```
 
 To show the pull requests that are not released, and how much time after
@@ -51,8 +55,15 @@ the changes was committed (the 'Release velocity').
 ./release-cli --repo '/home/wutao1/pegasus' --show-unreleased
 ```
 
+Outputs:
+
+```
+Pegasus#384 | "fix: unit test failed and update rdsn" | 15 Days
+```
+
 To show the pull requests that are included in 1.11.7:
 
 ```sh
 ./release-cli --repo '/home/wutao1/pegasus' --version '1.11.7'
 ```
+
