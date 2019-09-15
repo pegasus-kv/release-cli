@@ -1,6 +1,6 @@
 # Pegasus Release Cli
 
-Release Pegasus in our convention.
+Release in Pegasus's convention.
 
 > We branch from the mainline at a specific revision and never merge changes
 > from the branch back into the mainline. Bug fixes are submitted to the mainline
@@ -34,26 +34,22 @@ Or you can download [pre-built release] that is suitable for your platform.
 
 ## Usage
 
-### To specify the pull requests to 1.11 of Pegasus:
+### To specify the pull requests to 1.11 of Pegasus
 
 ```sh
-./release-cli --repo '/home/wutao1/pegasus' --branch '1.11' --pr-list='242,243,246'
-./release-cli --repo '/home/wutao1/pegasus' --branch '1.11' --pr=245
+./release-cli add --repo '/home/wutao1/pegasus' --branch '1.11' --pr-list='242,243,246'
+./release-cli add --repo '/home/wutao1/pegasus' --branch '1.11' --pr=245
 ```
 
 This command will cherry-pick the corresponding commits of the PRs to the 1.11 branch.
+Note that we assume the `origin` remote is where the official repository are.
+In our above example, the origin must be "<https://github.com/XiaoMi/pegasus.git"> or
+"git@github.com:XiaoMi/pegasus.git".
 
-### To undo the cherry-picks:
-
-```sh
-./release-cli --repo '/home/wutao1/pegasus' --branch '1.11' --del-pr=245
-./release-cli --repo '/home/wutao1/pegasus' --branch '1.11' --del-pr-list='246,242'
-```
-
-### To submit the cherry-picks and make a new release 1.11.7:
+### To submit the cherry-picks and make a new release 1.11.7
 
 ```sh
-./release-cli --repo '/home/wutao1/pegasus' --branch '1.11' --version='1.11.7' --submit
+./release-cli submit --repo '/home/wutao1/pegasus' --branch '1.11' --version='1.11.7'
 ```
 
 This command will tag the `HEAD` revision to '1.11.7', label the submitted cherry-picks
@@ -63,17 +59,17 @@ located easily.
 ### To show the pull requests that are not released, and how much time after the changes was committed (the 'Release velocity').
 
 ```sh
-./release-cli --repo '/home/wutao1/pegasus' --show-unreleased
+./release-cli show --repo '/home/wutao1/pegasus' --version '1.11.7'
 ```
 
 Outputs:
 
 ```txt
-Pegasus#384 | "fix: unit test failed and update rdsn" | 45 Days
+384 | "fix: unit test failed and update rdsn" | 45 Days
 ```
 
-### To show the pull requests that are included in 1.11.7:
+### To show the pull requests that are included in 1.11.7
 
 ```sh
-./release-cli --repo '/home/wutao1/pegasus' --version '1.11.7'
+./release-cli show --repo '/home/wutao1/pegasus' --version '1.11.7'
 ```
