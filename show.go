@@ -98,7 +98,7 @@ var showCommand *cli.Command = &cli.Command{
 			if is, _ := c.IsAncestor(commit); is {
 				return gitstorer.ErrStop
 			}
-			commitsMap[c.Message] = c
+			commitsMap[getCommitTitle(c.Message)] = c
 			iterCount++
 			return nil
 		})
@@ -116,39 +116,39 @@ var showCommand *cli.Command = &cli.Command{
 		table.SetHeader([]string{"PR", "Title", "Days after commit"})
 		table.SetBorder(false)
 		table.SetColWidth(120)
+		iterCount = 0
 		iter.ForEach(func(c *gitobj.Commit) error {
-			if commitsMap[c.Message] != nil {
+			commitTitle := getCommitTitle(c.Message)
+			if commitsMap[commitTitle] != nil {
 				return nil
 			}
 			if is, _ := c.IsAncestor(cpCommit); is {
 				return gitstorer.ErrStop
 			}
-			iterCount := 0
-			commitMsg := strings.TrimSpace(c.Message)
-			commitMsg = strings.Split(commitMsg, "\n")[0] // get the first line
 			daysAfterMerged := time.Now().Sub(c.Committer.When).Hours() / 24
 			table.Append([]string{
-				fmt.Sprintf("%s/%s%s", owner, repoName, getPrID(commitMsg)),
-				commitMsg,
+				fmt.Sprintf("%s/%s%s", owner, repoName, getPrID(commitTitle)),
+				commitTitle,
 				fmt.Sprintf("%.2f", daysAfterMerged)})
 			iterCount++
 			return nil
 		})
 		fmt.Printf("info: iterated %d commits in master branch\n\n", iterCount)
 		table.Render()
+		fmt.Println()
 		return nil
 	},
 }
 
 func hasEqualCommitInRepo(repo *git.Repository, commit *gitobj.Commit) (cpCommit *gitobj.Commit, result bool) {
-	iter, err := repo.Log(&git.LogOptions{Order: git.LogOrderCommitterTime})
+	iter, err := repo.Log(&git.LogOptions{})
 	if err != nil {
 		fatalExit(fatalError("unable perform git log"))
 	}
 
 	result = false
 	iter.ForEach(func(c *gitobj.Commit) error {
-		if strings.Compare(c.Message, commit.Message) == 0 {
+		if strings.Compare(getCommitTitle(c.Message), getCommitTitle(commit.Message)) == 0 {
 			result = true
 			cpCommit = c // find the counterpart
 			return gitstorer.ErrStop

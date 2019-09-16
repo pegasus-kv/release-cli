@@ -59,6 +59,10 @@ func getPrID(commitMsg string) string {
 	return commitMsg
 }
 
+func getCommitTitle(commitMsg string) string {
+	return strings.Split(strings.TrimSpace(commitMsg), "\n")[0] // get the first line
+}
+
 func checkoutBranch(repo, branch string) {
 	fatalExitIfNotNil(executeCommand("cd %s; git checkout %s", repo, branch))
 }

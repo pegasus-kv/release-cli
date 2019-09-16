@@ -68,8 +68,8 @@ Outputs:
 384 | "fix: unit test failed and update rdsn" | 45 Days
 ```
 
-### To show the pull requests that are included in 1.11.7
+If only the pull-request-ID is wanted:
 
 ```sh
-./release-cli show --repo '/home/wutao1/pegasus' --version '1.11.7'
+./release-cli show --repo '/home/wutao1/pegasus' --version '1.11.7' --pr-only
 ```
