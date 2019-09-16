@@ -51,6 +51,14 @@ func getPrName(owner, repoName string, prID int) string {
 	return fmt.Sprintf("%s/%s#%d", owner, repoName, prID)
 }
 
+func getPrID(commitMsg string) string {
+	pleft := strings.LastIndex(commitMsg, "(")
+	pright := strings.LastIndex(commitMsg, ")")
+	commitMsg = commitMsg[:pright]
+	commitMsg = commitMsg[pleft+1:]
+	return commitMsg
+}
+
 func checkoutBranch(repo, branch string) {
 	fatalExitIfNotNil(executeCommand("cd %s; git checkout %s", repo, branch))
 }

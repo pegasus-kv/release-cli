@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/google/go-github/v28/github"
 	"github.com/olekukonko/tablewriter"
 	git "gopkg.in/src-d/go-git.v4"
 	gitobj "gopkg.in/src-d/go-git.v4/plumbing/object"
@@ -95,13 +93,16 @@ var showCommand *cli.Command = &cli.Command{
 		checkoutBranch(repoArg, releaseBranch)
 		commitsMap := make(map[string]*gitobj.Commit)
 		iter, _ := repo.Log(&git.LogOptions{})
+		iterCount := 0
 		iter.ForEach(func(c *gitobj.Commit) error {
 			if is, _ := c.IsAncestor(commit); is {
 				return gitstorer.ErrStop
 			}
 			commitsMap[c.Message] = c
+			iterCount++
 			return nil
 		})
+		fmt.Printf("info: iterated %d commits in release branch %s\n", iterCount, releaseBranch)
 
 		// obtain the official owner and name of this repo
 		origin, err := repo.Remote("origin")
@@ -114,8 +115,7 @@ var showCommand *cli.Command = &cli.Command{
 		table := tablewriter.NewWriter(os.Stdout)
 		table.SetHeader([]string{"PR", "Title", "Days after commit"})
 		table.SetBorder(false)
-		table.SetColWidth(60)
-		client := github.NewClient(nil)
+		table.SetColWidth(120)
 		iter.ForEach(func(c *gitobj.Commit) error {
 			if commitsMap[c.Message] != nil {
 				return nil
@@ -123,17 +123,18 @@ var showCommand *cli.Command = &cli.Command{
 			if is, _ := c.IsAncestor(cpCommit); is {
 				return gitstorer.ErrStop
 			}
-			ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
-			prs, _, err := client.PullRequests.ListPullRequestsWithCommit(ctx, owner, repoName, c.Hash.String(), nil)
-			fatalExitIfNotNil(err)
-			if len(prs) != 1 {
-				fatalExit(fatalError("multiple pull requests associated with commit %s", c))
-			}
-			pr := prs[0]
-			daysAfterMerged := time.Now().Sub(pr.GetMergedAt()).Round(24 * time.Hour)
-			table.Append([]string{getPrName(owner, repoName, int(pr.GetID())), pr.GetTitle(), daysAfterMerged.String()})
+			iterCount := 0
+			commitMsg := strings.TrimSpace(c.Message)
+			commitMsg = strings.Split(commitMsg, "\n")[0] // get the first line
+			daysAfterMerged := time.Now().Sub(c.Committer.When).Hours() / 24
+			table.Append([]string{
+				fmt.Sprintf("%s/%s%s", owner, repoName, getPrID(commitMsg)),
+				commitMsg,
+				fmt.Sprintf("%.2f", daysAfterMerged)})
+			iterCount++
 			return nil
 		})
+		fmt.Printf("info: iterated %d commits in master branch\n\n", iterCount)
 		table.Render()
 		return nil
 	},
