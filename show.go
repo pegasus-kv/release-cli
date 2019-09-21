@@ -64,26 +64,13 @@ var showCommand *cli.Command = &cli.Command{
 
 		releaseBranch := fmt.Sprintf("v%s.%s", parts[0], parts[1])
 		initialVer := fmt.Sprintf("v%s.%s.0", parts[0], parts[1])
-		tag, err := repo.Tag(initialVer)
-		if err != nil {
-			return fatalError("no such version tag: %s", initialVer)
-		}
-		tagObj, err := repo.TagObject(tag.Hash())
-		var commit *gitobj.Commit
-		if err != nil {
-			fmt.Printf("warn: tag %s is possibly a lightweight tag, not an annotated tag\n", initialVer)
-			commit, err = repo.CommitObject(tag.Hash())
-			fatalExitIfNotNil(err)
-		} else {
-			commit, err = tagObj.Commit()
-			fatalExitIfNotNil(err)
-		}
+		commit := getCommitForTag(repo, initialVer)
 		checkoutBranch(repoArg, "master")
 		cpCommit, has := hasEqualCommitInRepo(repo, commit)
 		tryTimes := 0
 		for !has {
-			fmt.Printf("info: commit \"%s\" does not appear in master, use its parent instead\n",
-				strings.TrimSpace(commit.Message))
+			fmt.Printf("info: commit \"%s\" in branch %s has not counterpart in master, step back\n",
+				strings.TrimSpace(commit.Message), releaseBranch)
 			parent, err := commit.Parent(0)
 			if err != nil {
 				return fatalError("unable to find parent for commit: %s", commit.Hash)
