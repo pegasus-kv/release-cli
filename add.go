@@ -37,6 +37,7 @@ var addCommand *cli.Command = &cli.Command{
 	},
 	Action: func(c *cli.Context) error {
 		if c.NumFlags() == 0 {
+			// show help if no flags given
 			cli.ShowCommandHelp(c, "add")
 			return nil
 		}
@@ -52,14 +53,12 @@ var addCommand *cli.Command = &cli.Command{
 		if len(branchArg) == 0 {
 			return fatalError("--branch is required")
 		}
-
 		if repo, err = git.PlainOpen(pathArg); err != nil {
 			return fatalError("cannot open repo '%s': %s", pathArg, err)
 		}
 		if _, err = repo.Branch(branchArg); err != nil {
 			return fatalError("invalid branch '%s': %s", branchArg, err)
 		}
-
 		// obtain the pull-requests to merge
 		var prIDs []int
 		if c.IsSet("pr") {

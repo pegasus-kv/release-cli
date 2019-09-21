@@ -29,6 +29,7 @@ var showCommand *cli.Command = &cli.Command{
 	},
 	Action: func(c *cli.Context) error {
 		if c.NumFlags() == 0 {
+			// show help if no flags given
 			cli.ShowCommandHelp(c, "show")
 			return nil
 		}
@@ -67,8 +68,16 @@ var showCommand *cli.Command = &cli.Command{
 		if err != nil {
 			return fatalError("no such version tag: %s", initialVer)
 		}
-		tagObj, _ := repo.TagObject(tag.Hash())
-		commit, _ := tagObj.Commit()
+		tagObj, err := repo.TagObject(tag.Hash())
+		var commit *gitobj.Commit
+		if err != nil {
+			fmt.Printf("warn: tag %s is possibly a lightweight tag, not an annotated tag\n", initialVer)
+			commit, err = repo.CommitObject(tag.Hash())
+			fatalExitIfNotNil(err)
+		} else {
+			commit, err = tagObj.Commit()
+			fatalExitIfNotNil(err)
+		}
 		checkoutBranch(repoArg, "master")
 		cpCommit, has := hasEqualCommitInRepo(repo, commit)
 		tryTimes := 0
@@ -85,15 +94,13 @@ var showCommand *cli.Command = &cli.Command{
 			}
 			cpCommit, has = hasEqualCommitInRepo(repo, commit)
 		}
-		fmt.Printf("info: start scanning from commit \"%s\"\n", strings.TrimSpace(commit.Message))
-		fmt.Printf("info: commit-sha is %s in %s, %s in master branch\n",
-			commit.Hash.String()[:10], releaseBranch, cpCommit.Hash.String()[:10])
 
 		// the committed number in release branch is limited, no worry for OOM
 		checkoutBranch(repoArg, releaseBranch)
 		commitsMap := make(map[string]*gitobj.Commit)
 		iter, _ := repo.Log(&git.LogOptions{})
 		iterCount := 0
+		fmt.Printf("info: start scanning %s branch from commit \"%s\"\n", releaseBranch, getCommitTitle(commit.Message))
 		iter.ForEach(func(c *gitobj.Commit) error {
 			if is, _ := c.IsAncestor(commit); is {
 				return gitstorer.ErrStop
@@ -102,7 +109,7 @@ var showCommand *cli.Command = &cli.Command{
 			iterCount++
 			return nil
 		})
-		fmt.Printf("info: iterated %d commits in release branch %s\n", iterCount, releaseBranch)
+		fmt.Printf("info: there are in total %d commits in %s branch\n", iterCount, releaseBranch)
 
 		// obtain the official owner and name of this repo
 		origin, err := repo.Remote("origin")
@@ -111,12 +118,14 @@ var showCommand *cli.Command = &cli.Command{
 
 		// find the counterpart in master branch, if not, print it in the table
 		checkoutBranch(repoArg, "master")
+		// TODO(wutao1): compare the current commit revision with the origin.
 		iter, _ = repo.Log(&git.LogOptions{})
 		table := tablewriter.NewWriter(os.Stdout)
 		table.SetHeader([]string{"PR", "Title", "Days after commit"})
 		table.SetBorder(false)
 		table.SetColWidth(120)
 		iterCount = 0
+		fmt.Printf("info: start scanning master branch\n")
 		iter.ForEach(func(c *gitobj.Commit) error {
 			commitTitle := getCommitTitle(c.Message)
 			if commitsMap[commitTitle] != nil {
@@ -133,7 +142,7 @@ var showCommand *cli.Command = &cli.Command{
 			iterCount++
 			return nil
 		})
-		fmt.Printf("info: iterated %d commits in master branch\n\n", iterCount)
+		fmt.Printf("info: there are %d commits unmerged to %s branch\n\n", iterCount, releaseBranch)
 		table.Render()
 		fmt.Println()
 		return nil
