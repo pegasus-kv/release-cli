@@ -6,23 +6,22 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/urfave/cli.v2"
+	"github.com/urfave/cli"
 )
 
 func main() {
 	app := &cli.App{
 		Name:  "release-cli",
 		Usage: "Release in Pegasus's convention",
-		Commands: []*cli.Command{
-			addCommand,
-			showCommand,
-			submitCommand,
+		Commands: []cli.Command{
+			*addCommand,
+			*showCommand,
+			*submitCommand,
 		},
 		Action: func(c *cli.Context) error {
 			cli.ShowAppHelp(c)
 			return nil
 		},
-		EnableShellCompletion: true,
 		Compiled:              time.Now(),
 		HideVersion:           true,
 	}

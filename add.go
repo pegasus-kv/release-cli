@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 	"time"
+	"strconv"
 
 	"github.com/google/go-github/v28/github"
 	"github.com/olekukonko/tablewriter"
 	git "gopkg.in/src-d/go-git.v4"
-	"gopkg.in/urfave/cli.v2"
+	"github.com/urfave/cli"
 )
 
 // ./release-cli add
@@ -18,21 +18,17 @@ var addCommand *cli.Command = &cli.Command{
 	Name:  "add",
 	Usage: "Specify the pull-requests to merge to release branch",
 	Flags: []cli.Flag{
-		&cli.PathFlag{
+		cli.StringFlag{
 			Name:  "repo",
 			Usage: "The path where the git repository locates",
 		},
-		&cli.StringFlag{
+		cli.StringFlag{
 			Name:  "branch",
 			Usage: "The release branch for cherry-picks",
 		},
-		&cli.IntSliceFlag{
+		cli.IntSliceFlag{
 			Name:  "pr-list",
-			Usage: "The pull-request IDs intended to be merged",
-		},
-		&cli.IntFlag{
-			Name:  "pr",
-			Usage: "The pull-request ID intended to be merged",
+			Usage: "The pull-request IDs intended to be merged (233,266,257 format)",
 		},
 	},
 	Action: func(c *cli.Context) error {
@@ -45,13 +41,13 @@ var addCommand *cli.Command = &cli.Command{
 		var err error
 		var repo *git.Repository
 
-		pathArg := c.Path("repo")
+		pathArg := c.String("repo")
 		branchArg := c.String("branch")
 		if len(pathArg) == 0 {
-			return fatalError("--repo is required")
+			return fatalError("--repo is required (/home/pegasus, e.g.)")
 		}
 		if len(branchArg) == 0 {
-			return fatalError("--branch is required")
+			return fatalError("--branch is required (v1.11, e.g.)")
 		}
 		if repo, err = git.PlainOpen(pathArg); err != nil {
 			return fatalError("cannot open repo '%s': %s", pathArg, err)
@@ -61,16 +57,16 @@ var addCommand *cli.Command = &cli.Command{
 		}
 		// obtain the pull-requests to merge
 		var prIDs []int
-		if c.IsSet("pr") {
-			prIDs = append(prIDs, c.Int("pr"))
-		}
-		if c.IsSet("pr-list") {
-			prIDs = append(prIDs, c.IntSlice("pr-list")...)
+		for _, arg := range c.Args() {
+			pr, err := strconv.Atoi(arg)
+			if err != nil {
+				return fatalError("invalid PR number '%s'", arg)
+			}
+			prIDs = append(prIDs, pr)
 		}
 		if len(prIDs) == 0 {
 			return fatalError("no pull-request is specified")
 		}
-		sort.Ints(prIDs) // in ascending order
 
 		// obtain the official owner and name of this repo
 		origin, err := repo.Remote("origin")

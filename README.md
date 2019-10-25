@@ -59,7 +59,7 @@ located easily.
 ### To show the pull requests that are not released, and how much time after the changes was committed (the 'Release velocity').
 
 ```sh
-./release-cli show --repo '/home/wutao1/pegasus' --version '1.11.7'
+./release-cli show --repo '/home/wutao1/pegasus' --version '1.11'
 ```
 
 Outputs:
@@ -71,5 +71,5 @@ Outputs:
 If only the pull-request-ID is wanted:
 
 ```sh
-./release-cli show --repo '/home/wutao1/pegasus' --version '1.11.7' --pr-only
+./release-cli show --repo '/home/wutao1/pegasus' --version '1.11' --pr-only
 ```

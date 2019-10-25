@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/olekukonko/tablewriter"
+	"github.com/urfave/cli"
 	git "gopkg.in/src-d/go-git.v4"
 	gitobj "gopkg.in/src-d/go-git.v4/plumbing/object"
 	gitstorer "gopkg.in/src-d/go-git.v4/plumbing/storer"
-	"gopkg.in/urfave/cli.v2"
 )
 
 // ./release-cli show
@@ -18,13 +18,17 @@ var showCommand *cli.Command = &cli.Command{
 	Name:  "show",
 	Usage: "To show the pull requests that are not released comparing to the given version",
 	Flags: []cli.Flag{
-		&cli.PathFlag{
+		&cli.StringFlag{
 			Name:  "repo",
 			Usage: "The path where the git repository locates",
 		},
 		&cli.StringFlag{
 			Name:  "version",
 			Usage: "The released version to compare",
+		},
+		&cli.BoolFlag{
+			Name:  "short",
+			Usage: "Print PR ID and title only",
 		},
 	},
 	Action: func(c *cli.Context) error {
@@ -37,7 +41,7 @@ var showCommand *cli.Command = &cli.Command{
 		var err error
 		var repo *git.Repository
 
-		repoArg := c.Path("repo")
+		repoArg := c.String("repo")
 		versionArg := c.String("version")
 
 		// validate --repo
@@ -53,8 +57,8 @@ var showCommand *cli.Command = &cli.Command{
 			return fatalError("--version is required")
 		}
 		parts := strings.Split(versionArg, ".")
-		if len(parts) != 3 {
-			return fatalError("invalid version: %s", versionArg)
+		if len(parts) != 2 {
+			return fatalError("invalid version: %s, version should have 2 parts, like \"1.11\"", versionArg)
 		}
 
 		// Find the initial commit in current minor version, and find the commits
@@ -108,11 +112,19 @@ var showCommand *cli.Command = &cli.Command{
 		// TODO(wutao1): compare the current commit revision with the origin.
 		iter, _ = repo.Log(&git.LogOptions{})
 		table := tablewriter.NewWriter(os.Stdout)
-		table.SetHeader([]string{"PR", "Title", "Days after commit"})
-		table.SetBorder(false)
+		short := c.Bool("short")
+		header := []string{"PR", "Title"}
+		if !short { // print other details
+			header = append(header, "Days after commit")
+		}
+		table.SetHeader(header)
+		table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
 		table.SetColWidth(120)
+		table.SetCenterSeparator("|")
+
 		iterCount = 0
 		fmt.Printf("info: start scanning master branch\n")
+		var tableBulk [][]string
 		iter.ForEach(func(c *gitobj.Commit) error {
 			commitTitle := getCommitTitle(c.Message)
 			if commitsMap[commitTitle] != nil {
@@ -121,15 +133,19 @@ var showCommand *cli.Command = &cli.Command{
 			if is, _ := c.IsAncestor(cpCommit); is {
 				return gitstorer.ErrStop
 			}
-			daysAfterMerged := time.Now().Sub(c.Committer.When).Hours() / 24
-			table.Append([]string{
+			row := []string{
 				fmt.Sprintf("%s/%s%s", owner, repoName, getPrID(commitTitle)),
-				commitTitle,
-				fmt.Sprintf("%.2f", daysAfterMerged)})
+				commitTitle[:strings.LastIndex(commitTitle, "(")]} // drop the PrID part, because the PR column has included
+			if !short {
+				daysAfterMerged := time.Now().Sub(c.Committer.When).Hours() / 24
+				row = append(row, fmt.Sprintf("%.2f", daysAfterMerged))
+			}
+			tableBulk = append(tableBulk, row)
 			iterCount++
 			return nil
 		})
 		fmt.Printf("info: there are %d commits unmerged to %s branch\n\n", iterCount, releaseBranch)
+		table.AppendBulk(tableBulk)
 		table.Render()
 		fmt.Println()
 		return nil

@@ -14,7 +14,7 @@ import (
 	git "gopkg.in/src-d/go-git.v4"
 	gitobj "gopkg.in/src-d/go-git.v4/plumbing/object"
 	gitstorer "gopkg.in/src-d/go-git.v4/plumbing/storer"
-	"gopkg.in/urfave/cli.v2"
+	"github.com/urfave/cli"
 )
 
 // ./release-cli submit
@@ -22,7 +22,7 @@ var submitCommand *cli.Command = &cli.Command{
 	Name:  "submit",
 	Usage: "To submit the pull requests to the given release branch",
 	Flags: []cli.Flag{
-		&cli.PathFlag{
+		&cli.StringFlag{
 			Name:  "repo",
 			Usage: "The path where the git repository locates",
 		},
@@ -33,7 +33,7 @@ var submitCommand *cli.Command = &cli.Command{
 		&cli.StringFlag{
 			Name:    "access",
 			Usage:   "The access token to github",
-			EnvVars: []string{"ACCESS_TOKEN"},
+			EnvVar:  "ACCESS_TOKEN",
 		},
 	},
 	Action: func(c *cli.Context) error {
@@ -47,7 +47,7 @@ var submitCommand *cli.Command = &cli.Command{
 		var repo *git.Repository
 
 		// validate --repo
-		repoArg := c.Path("repo")
+		repoArg := c.String("repo")
 		if len(repoArg) == 0 {
 			return fatalError("--repo is required")
 		}
