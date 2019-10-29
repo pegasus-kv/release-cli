@@ -48,6 +48,11 @@ func getOwnerAndRepoFromURL(url string) (owner string, repo string) {
 	urlParts := strings.Split(url, "/")
 	owner = urlParts[len(urlParts)-2]
 	repo = urlParts[len(urlParts)-1]
+
+	colon := strings.Index(owner, ":") // in case it's a ssh url
+	if colon != -1 {
+		owner = owner[colon+1:]
+	}
 	return
 }
 
