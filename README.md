@@ -34,6 +34,9 @@ Or you can download [pre-built release] that is suitable for your platform.
 
 ## Usage
 
+Please ensure your repo that you want to make release are as clean as possible.
+It's recommended to re-clone the repo to different location with your development branch, if you have one.
+
 ### To specify the pull requests to 1.11 of Pegasus
 
 ```sh

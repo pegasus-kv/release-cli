@@ -34,8 +34,7 @@ var showCommand *cli.Command = &cli.Command{
 	Action: func(c *cli.Context) error {
 		if c.NumFlags() == 0 {
 			// show help if no flags given
-			cli.ShowCommandHelp(c, "show")
-			return nil
+			return cli.ShowCommandHelp(c, "show")
 		}
 
 		var err error
@@ -57,8 +56,11 @@ var showCommand *cli.Command = &cli.Command{
 			return fatalError("--version is required")
 		}
 		parts := strings.Split(versionArg, ".")
-		if len(parts) != 2 {
-			return fatalError("invalid version: %s, version should have 2 parts, like \"1.11\"", versionArg)
+		if len(parts) != 2 && len(parts) != 3 {
+			return fatalError("invalid version: %s, version should have 2 or 3 parts, like \"1.11\" or \"1.12.1\"", versionArg)
+		}
+		if len(parts) == 2 {
+			parts = append(parts, "0")
 		}
 
 		// Find the initial commit in current minor version, and find the commits
@@ -67,7 +69,7 @@ var showCommand *cli.Command = &cli.Command{
 		// minor version branch.
 
 		releaseBranch := fmt.Sprintf("v%s.%s", parts[0], parts[1])
-		initialVer := fmt.Sprintf("v%s.%s.0", parts[0], parts[1])
+		initialVer := fmt.Sprintf("v%s.%s.%s", parts[0], parts[1], parts[2])
 		commit := getCommitForTag(repo, initialVer)
 		checkoutBranch(repoArg, "master")
 		cpCommit, has := hasEqualCommitInRepo(repo, commit)
@@ -92,7 +94,7 @@ var showCommand *cli.Command = &cli.Command{
 		iter, _ := repo.Log(&git.LogOptions{})
 		iterCount := 0
 		fmt.Printf("info: start scanning %s branch from commit \"%s\"\n", releaseBranch, getCommitTitle(commit.Message))
-		iter.ForEach(func(c *gitobj.Commit) error {
+		err = iter.ForEach(func(c *gitobj.Commit) error {
 			if is, _ := c.IsAncestor(commit); is {
 				return gitstorer.ErrStop
 			}
@@ -100,6 +102,9 @@ var showCommand *cli.Command = &cli.Command{
 			iterCount++
 			return nil
 		})
+		if err != nil {
+			return err
+		}
 		fmt.Printf("info: there are in total %d commits in %s branch\n", iterCount, releaseBranch)
 
 		// obtain the official owner and name of this repo
@@ -125,7 +130,7 @@ var showCommand *cli.Command = &cli.Command{
 		iterCount = 0
 		fmt.Printf("info: start scanning master branch\n")
 		var tableBulk [][]string
-		iter.ForEach(func(c *gitobj.Commit) error {
+		err = iter.ForEach(func(c *gitobj.Commit) error {
 			commitTitle := getCommitTitle(c.Message)
 			if commitsMap[commitTitle] != nil {
 				return nil
@@ -137,13 +142,16 @@ var showCommand *cli.Command = &cli.Command{
 				fmt.Sprintf("%s/%s%s", owner, repoName, getPrID(commitTitle)),
 				commitTitle[:strings.LastIndex(commitTitle, "(")]} // drop the PrID part, because the PR column has included
 			if !short {
-				daysAfterMerged := time.Now().Sub(c.Committer.When).Hours() / 24
+				daysAfterMerged := time.Since(c.Committer.When).Hours() / 24
 				row = append(row, fmt.Sprintf("%.2f", daysAfterMerged))
 			}
 			tableBulk = append(tableBulk, row)
 			iterCount++
 			return nil
 		})
+		if err != nil {
+			return err
+		}
 		fmt.Printf("info: there are %d commits unmerged to %s branch\n\n", iterCount, releaseBranch)
 		table.AppendBulk(tableBulk)
 		table.Render()
@@ -159,7 +167,7 @@ func hasEqualCommitInRepo(repo *git.Repository, commit *gitobj.Commit) (cpCommit
 	}
 
 	result = false
-	iter.ForEach(func(c *gitobj.Commit) error {
+	err = iter.ForEach(func(c *gitobj.Commit) error {
 		if strings.Compare(getCommitTitle(c.Message), getCommitTitle(commit.Message)) == 0 {
 			result = true
 			cpCommit = c // find the counterpart
@@ -167,5 +175,8 @@ func hasEqualCommitInRepo(repo *git.Repository, commit *gitobj.Commit) (cpCommit
 		}
 		return nil
 	})
+	if err != nil {
+		panic(err)
+	}
 	return
 }

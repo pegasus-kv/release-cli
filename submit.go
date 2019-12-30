@@ -10,11 +10,11 @@ import (
 
 	"github.com/google/go-github/v28/github"
 	"github.com/olekukonko/tablewriter"
+	"github.com/urfave/cli"
 	"golang.org/x/oauth2"
 	git "gopkg.in/src-d/go-git.v4"
 	gitobj "gopkg.in/src-d/go-git.v4/plumbing/object"
 	gitstorer "gopkg.in/src-d/go-git.v4/plumbing/storer"
-	"github.com/urfave/cli"
 )
 
 // ./release-cli submit
@@ -31,9 +31,9 @@ var submitCommand *cli.Command = &cli.Command{
 			Usage: "The new release version to submit",
 		},
 		&cli.StringFlag{
-			Name:    "access",
-			Usage:   "The access token to github",
-			EnvVar:  "ACCESS_TOKEN",
+			Name:   "access",
+			Usage:  "The access token to github, see https://github.com/settings/tokens",
+			EnvVar: "ACCESS_TOKEN",
 		},
 	},
 	Action: func(c *cli.Context) error {
