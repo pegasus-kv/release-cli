@@ -30,18 +30,22 @@ var showCommand *cli.Command = &cli.Command{
 			Name:  "short",
 			Usage: "Print PR ID and title only",
 		},
+		&cli.BoolFlag{
+			Name:  "unreleased_only",
+			Usage: "Show only the commits that are not merged in release branch",
+		},
 	},
-	Action: func(c *cli.Context) error {
-		if c.NumFlags() == 0 {
+	Action: func(ctx *cli.Context) error {
+		if ctx.NumFlags() == 0 {
 			// show help if no flags given
-			return cli.ShowCommandHelp(c, "show")
+			return cli.ShowCommandHelp(ctx, "show")
 		}
 
 		var err error
 		var repo *git.Repository
 
-		repoArg := c.String("repo")
-		versionArg := c.String("version")
+		repoArg := ctx.String("repo")
+		versionArg := ctx.String("version")
 
 		// validate --repo
 		if len(repoArg) == 0 {
@@ -59,8 +63,15 @@ var showCommand *cli.Command = &cli.Command{
 		if len(parts) != 2 && len(parts) != 3 {
 			return fatalError("invalid version: %s, version should have 2 or 3 parts, like \"1.11\" or \"1.12.1\"", versionArg)
 		}
-		if len(parts) == 2 {
-			parts = append(parts, "0")
+
+		// obtain the official owner and name of this repo
+		origin, err := repo.Remote("origin")
+		fatalExitIfNotNil(err)
+		owner, repoName := getOwnerAndRepoFromURL(origin.Config().URLs[0])
+
+		if len(parts) == 3 {
+			fmt.Printf("If the given version is released before, please find the commits here: https://github.com/%s/%s/labels/%s\n", owner, repoName, versionArg)
+			return nil
 		}
 
 		// Find the initial commit in current minor version, and find the commits
@@ -96,7 +107,7 @@ var showCommand *cli.Command = &cli.Command{
 		checkoutBranch(repoArg, releaseBranch)
 		commitsMap := make(map[string]*gitobj.Commit)
 		iter, _ := repo.Log(&git.LogOptions{})
-		iterCount := 0
+		releasedCount := 0
 		fmt.Printf("info: start scanning %s branch from commit \"%s\"\n", releaseBranch, getCommitTitle(initialCommit.Message))
 		err = iter.ForEach(func(c *gitobj.Commit) error {
 			if is, _ := c.IsAncestor(initialCommit); is {
@@ -104,44 +115,40 @@ var showCommand *cli.Command = &cli.Command{
 			}
 			// find the released commits, which are the commits in release branch
 			commitsMap[getCommitTitle(c.Message)] = c
-			iterCount++
+			releasedCount++
 			return nil
 		})
 		if err != nil {
 			return err
 		}
-		fmt.Printf("info: there are in total %d commits in %s branch\n", iterCount, releaseBranch)
-
-		// obtain the official owner and name of this repo
-		origin, err := repo.Remote("origin")
-		fatalExitIfNotNil(err)
-		owner, repoName := getOwnerAndRepoFromURL(origin.Config().URLs[0])
+		fmt.Printf("info: there are in total %d commits in %s branch\n", releasedCount, releaseBranch)
 
 		// find the counterpart in master branch, if not, print it in the table
 		checkoutBranch(repoArg, "master")
 		// TODO(wutao1): compare the current commit revision with the origin.
 		iter, _ = repo.Log(&git.LogOptions{})
-		table := tablewriter.NewWriter(os.Stdout)
-		short := c.Bool("short")
-		header := []string{"PR", "Title"}
-		if !short { // print other details
-			header = append(header, "Days after commit")
-		}
-		table.SetHeader(header)
-		table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
-		table.SetColWidth(120)
-		table.SetCenterSeparator("|")
-
-		iterCount = 0
+		short := ctx.Bool("short")
+		unreleasedOnly := ctx.Bool("unreleased_only")
+		unreleasedCount := 0
+		releasedCount = 0
 		fmt.Printf("info: start scanning master branch\n")
 		var tableBulk [][]string
 		err = iter.ForEach(func(c *gitobj.Commit) error {
-			commitTitle := getCommitTitle(c.Message)
-			if commitsMap[commitTitle] != nil {
-				return nil
-			}
 			if is, _ := c.IsAncestor(cpCommit); is {
 				return gitstorer.ErrStop
+			}
+			commitTitle := getCommitTitle(c.Message)
+			released := true
+			if commitsMap[commitTitle] != nil {
+				// this commit in master branch has counterpart in release branch, which means this commit is released
+				if unreleasedOnly {
+					// skip those that are released already
+					return nil
+				}
+				releasedCount++
+			} else {
+				released = false
+				unreleasedCount++
 			}
 			row := []string{
 				fmt.Sprintf("%s/%s%s", owner, repoName, getPrID(commitTitle)),
@@ -149,20 +156,47 @@ var showCommand *cli.Command = &cli.Command{
 			if !short {
 				daysAfterMerged := time.Since(c.Committer.When).Hours() / 24
 				row = append(row, fmt.Sprintf("%.2f", daysAfterMerged))
+				if !unreleasedOnly && released {
+					row = append(row, "RELEASED")
+				} else if !unreleasedOnly {
+					row = append(row, "")
+				}
 			}
 			tableBulk = append(tableBulk, row)
-			iterCount++
 			return nil
 		})
 		if err != nil {
 			return err
 		}
-		fmt.Printf("info: there are %d commits unmerged to %s branch\n\n", iterCount, releaseBranch)
-		table.AppendBulk(tableBulk)
-		table.Render()
-		fmt.Println()
+
+		printTable(tableBulk, unreleasedOnly, short, unreleasedCount, releasedCount)
 		return nil
 	},
+}
+
+func printTable(
+	tableBulk [][]string,
+	unreleasedOnly, short bool,
+	unreleasedCount, releasedCount int) {
+
+	table := tablewriter.NewWriter(os.Stdout)
+	var header []string
+	if unreleasedOnly {
+		header = []string{fmt.Sprintf("PR (%d TOTAL)", unreleasedCount), "TITLE"}
+	} else {
+		header = []string{fmt.Sprintf("PR (%d RELEASED, %d TOTAL)", releasedCount, unreleasedCount+releasedCount), "TITLE"}
+	}
+	if !short { // print other details
+		header = append(header, "Days after commit")
+	}
+	fmt.Println()
+	table.SetHeader(header)
+	table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
+	table.SetColWidth(120)
+	table.SetCenterSeparator("|")
+	table.AppendBulk(tableBulk)
+	table.Render()
+	fmt.Println()
 }
 
 func hasEqualCommitInRepo(repo *git.Repository, commit *gitobj.Commit) (cpCommit *gitobj.Commit, result bool) {
