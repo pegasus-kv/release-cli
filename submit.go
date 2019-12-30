@@ -72,6 +72,12 @@ var submitCommand *cli.Command = &cli.Command{
 		}
 
 		patchVer, err := strconv.Atoi(parts[2])
+		if err != nil {
+			return err
+		}
+		if patchVer == 0 {
+			return fatalError("Currently patch version == 0 is not supported")
+		}
 		lastestVer := fmt.Sprintf("v%s.%s.%d", parts[0], parts[1], patchVer-1)
 		lastestVerCommit := getCommitForTag(repo, lastestVer)
 		releaseBranch := fmt.Sprintf("v%s.%s", parts[0], parts[1])
