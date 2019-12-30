@@ -37,8 +37,7 @@ Or you can download [pre-built release] that is suitable for your platform.
 ### To specify the pull requests to 1.11 of Pegasus
 
 ```sh
-./release-cli add --repo '/home/wutao1/pegasus' --branch '1.11' --pr-list='242,243,246'
-./release-cli add --repo '/home/wutao1/pegasus' --branch '1.11' --pr=245
+./release-cli add --repo '/home/wutao1/pegasus' --branch '1.11' 242 243 246
 ```
 
 This command will cherry-pick the corresponding commits of the PRs to the 1.11 branch.
