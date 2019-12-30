@@ -43,6 +43,7 @@ func executeCommand(format string, a ...interface{}) error {
 	return err
 }
 
+// for example, for xiaomi/pegasus, the owner is "xiaomi", the repoName is "pegasus"
 func getOwnerAndRepoFromURL(url string) (owner string, repo string) {
 	url = strings.TrimSuffix(url, ".git")
 	urlParts := strings.Split(url, "/")

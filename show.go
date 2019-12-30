@@ -69,23 +69,27 @@ var showCommand *cli.Command = &cli.Command{
 		// minor version branch.
 
 		releaseBranch := fmt.Sprintf("v%s.%s", parts[0], parts[1])
-		initialVer := fmt.Sprintf("v%s.%s.%s", parts[0], parts[1], parts[2])
-		commit := getCommitForTag(repo, initialVer)
+		initialVer := fmt.Sprintf("v%s.%s.0", parts[0], parts[1])
+		initialCommit := getCommitForTag(repo, initialVer)
+
 		checkoutBranch(repoArg, "master")
-		cpCommit, has := hasEqualCommitInRepo(repo, commit)
+		cpCommit, has := hasEqualCommitInRepo(repo, initialCommit)
 		tryTimes := 0
 		for !has {
+			// trace back to the first commit of the release branch: `initialCommit`, this is where the master branch
+			// and the release branch are diverged.
+
 			fmt.Printf("info: commit \"%s\" in branch %s has not counterpart in master, step back\n",
-				strings.TrimSpace(commit.Message), releaseBranch)
-			parent, err := commit.Parent(0)
+				strings.TrimSpace(initialCommit.Message), releaseBranch)
+			parent, err := initialCommit.Parent(0)
 			if err != nil {
-				return fatalError("unable to find parent for commit: %s", commit.Hash)
+				return fatalError("unable to find parent for commit: %s", initialCommit.Hash)
 			}
-			commit = parent
+			initialCommit = parent
 			if tryTimes++; tryTimes > 10 {
 				return fatalError("stop. unable to find the equal commits both in master and %s", releaseBranch)
 			}
-			cpCommit, has = hasEqualCommitInRepo(repo, commit)
+			cpCommit, has = hasEqualCommitInRepo(repo, initialCommit)
 		}
 
 		// the committed number in release branch is limited, no worry for OOM
@@ -93,11 +97,12 @@ var showCommand *cli.Command = &cli.Command{
 		commitsMap := make(map[string]*gitobj.Commit)
 		iter, _ := repo.Log(&git.LogOptions{})
 		iterCount := 0
-		fmt.Printf("info: start scanning %s branch from commit \"%s\"\n", releaseBranch, getCommitTitle(commit.Message))
+		fmt.Printf("info: start scanning %s branch from commit \"%s\"\n", releaseBranch, getCommitTitle(initialCommit.Message))
 		err = iter.ForEach(func(c *gitobj.Commit) error {
-			if is, _ := c.IsAncestor(commit); is {
+			if is, _ := c.IsAncestor(initialCommit); is {
 				return gitstorer.ErrStop
 			}
+			// find the released commits, which are the commits in release branch
 			commitsMap[getCommitTitle(c.Message)] = c
 			iterCount++
 			return nil
