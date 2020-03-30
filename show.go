@@ -9,6 +9,7 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli"
 	git "gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	gitobj "gopkg.in/src-d/go-git.v4/plumbing/object"
 	gitstorer "gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
@@ -27,13 +28,13 @@ var showCommand *cli.Command = &cli.Command{
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:        "repo",
-			Usage:       "The path where the git repository locates, ~/pegasus e.g",
+			Usage:       "The path where the git repository locates, '~/pegasus' e.g",
 			Required:    true,
 			Destination: &repoArg,
 		},
 		&cli.StringFlag{
 			Name:        "version",
-			Usage:       "The released version to compare, 1.12 e.g",
+			Usage:       "The minor version to release, 1.12 e.g",
 			Required:    true,
 			Destination: &versionArg,
 		},
@@ -76,14 +77,15 @@ var showCommand *cli.Command = &cli.Command{
 			return nil
 		}
 
-		// Find the initial commit in current minor version, and find the commits
+		// Find the initial commit for current version, and find the commits
 		// afterwards in master branch.
 		// The unreleased commits are which in the master branch, but not in the
 		// minor version branch.
 
 		releaseBranch := fmt.Sprintf("v%s.%s", parts[0], parts[1])
-		initialVer := fmt.Sprintf("v%s.%s.0", parts[0], parts[1])
+		initialVer := getLatestVersionInReleaseBranch(repo, releaseBranch)
 		initialCommit := getCommitForTag(repo, initialVer)
+		fmt.Printf("info: the latest version in %s is %s\n", releaseBranch, initialVer)
 
 		checkoutBranch(repoArg, "master")
 		cpCommit, has := findEqualCommitInRepo(repo, initialCommit)
@@ -110,7 +112,7 @@ var showCommand *cli.Command = &cli.Command{
 		commitsMap := make(map[string]*gitobj.Commit)
 		iter, _ := repo.Log(&git.LogOptions{})
 		releasedCount := 0
-		fmt.Printf("info: start scanning %s branch from commit \"%s\"\n", releaseBranch, getCommitTitle(initialCommit.Message))
+		fmt.Printf("info: start scanning %s branch from commit that's tagged %s \"%s\"\n", releaseBranch, initialVer, getCommitTitle(initialCommit.Message))
 		err = iter.ForEach(func(c *gitobj.Commit) error {
 			if is, _ := c.IsAncestor(initialCommit); is {
 				return gitstorer.ErrStop
@@ -123,7 +125,7 @@ var showCommand *cli.Command = &cli.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Printf("info: there are in total %d commits in %s branch\n", releasedCount, releaseBranch)
+		fmt.Printf("info: there are in total %d commits after %s\n", releasedCount, initialVer)
 
 		// find the counterpart in master branch, if not, print it in the table
 		checkoutBranch(repoArg, "master")
@@ -191,4 +193,22 @@ func printTable(tableBulk [][]string, unreleasedCount, releasedCount int) {
 	table.AppendBulk(tableBulk)
 	table.Render()
 	fmt.Println()
+}
+
+func getLatestVersionInReleaseBranch(repo *git.Repository, releaseBranch string) string {
+	checkoutBranch(repoArg, releaseBranch)
+	tagIter, err := repo.Tags()
+	if err != nil {
+		fatalExit(fatalError("unable to get tags in release branch: %s", releaseBranch))
+	}
+	latestVer := ""
+	err = tagIter.ForEach(func(ref *plumbing.Reference) error {
+		ver := strings.TrimPrefix(ref.Name().String(), "refs/tags/")
+		if strings.HasPrefix(ver, releaseBranch) && strings.Compare(ver, latestVer) > 0 {
+			latestVer = ver
+		}
+		return nil
+	})
+	fatalExitIfNotNil(err)
+	return latestVer
 }
