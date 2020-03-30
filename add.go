@@ -1,17 +1,18 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"time"
 	"strconv"
 
-	"github.com/google/go-github/v28/github"
 	"github.com/olekukonko/tablewriter"
-	git "gopkg.in/src-d/go-git.v4"
 	"github.com/urfave/cli"
+	git "gopkg.in/src-d/go-git.v4"
+	gitobj "gopkg.in/src-d/go-git.v4/plumbing/object"
 )
+
+var repoArg = ""
+var branchArg = ""
 
 // ./release-cli add
 var addCommand *cli.Command = &cli.Command{
@@ -19,12 +20,16 @@ var addCommand *cli.Command = &cli.Command{
 	Usage: "Specify the pull-requests to merge to release branch",
 	Flags: []cli.Flag{
 		cli.StringFlag{
-			Name:  "repo",
-			Usage: "The path where the git repository locates",
+			Name:        "repo",
+			Usage:       "The path where the git repository locates. /home/pegasus eg.",
+			Required:    true,
+			Destination: &repoArg,
 		},
 		cli.StringFlag{
-			Name:  "branch",
-			Usage: "The release branch for cherry-picks",
+			Name:        "branch",
+			Usage:       "The release branch for cherry-picks. v1.12 eg.",
+			Required:    true,
+			Destination: &branchArg,
 		},
 		cli.IntSliceFlag{
 			Name:  "pr-list",
@@ -32,28 +37,10 @@ var addCommand *cli.Command = &cli.Command{
 		},
 	},
 	Action: func(c *cli.Context) error {
-		if c.NumFlags() == 0 {
-			// show help if no flags given
-			cli.ShowCommandHelp(c, "add")
-			return nil
-		}
-
 		var err error
 		var repo *git.Repository
-
-		pathArg := c.String("repo")
-		branchArg := c.String("branch")
-		if len(pathArg) == 0 {
-			return fatalError("--repo is required (/home/pegasus, e.g.)")
-		}
-		if len(branchArg) == 0 {
-			return fatalError("--branch is required (v1.11, e.g.)")
-		}
-		if repo, err = git.PlainOpen(pathArg); err != nil {
-			return fatalError("cannot open repo '%s': %s", pathArg, err)
-		}
-		if _, err = repo.Branch(branchArg); err != nil {
-			return fatalError("invalid branch '%s': %s", branchArg, err)
+		if repo, err = git.PlainOpen(repoArg); err != nil {
+			return fatalError("cannot open repo '%s': %s", repoArg, err)
 		}
 		// obtain the pull-requests to merge
 		var prIDs []int
@@ -72,27 +59,28 @@ var addCommand *cli.Command = &cli.Command{
 		origin, err := repo.Remote("origin")
 		fatalExitIfNotNil(err)
 		owner, repoName := getOwnerAndRepoFromURL(origin.Config().URLs[0])
-		fmt.Printf("Making release on '%s'...\n\n", origin.Config().URLs[0])
+		fmt.Printf("Cherry-picking PRs on '%s'...\n\n", origin.Config().URLs[0])
 
 		// obtain the real commit id of the pull-requests
-		client := github.NewClient(nil)
-		var prs []*github.PullRequest
+		checkoutBranch(repoArg, "master")
+		var prs []*gitobj.Commit
 		table := tablewriter.NewWriter(os.Stdout)
 		table.SetHeader([]string{"PR", "Commit SHA", "Title"})
 		table.SetBorder(false)
 		table.SetColWidth(60)
 		for _, prID := range prIDs {
-			// TODO(wutao1): remove duplicates
-			ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
-			pr, _, err := client.PullRequests.Get(ctx, owner, repoName, prID)
-			fatalExitIfNotNil(err)
-			table.Append([]string{getPrName(owner, repoName, prID), pr.GetMergeCommitSHA()[:10], pr.GetTitle()})
-			prs = append(prs, pr)
+			commit, has := findCommitWithPRNumberInRepo(repo, prID)
+			if !has {
+				return fatalError("no such PR in the repo #%d", prID)
+			}
+			table.Append([]string{getPrName(owner, repoName, prID), commit.ID().String()[:10], getCommitTitle(commit.Message)})
+			prs = append(prs, commit)
 		}
 		table.Render()
 		fmt.Println()
 
-		if err = cherryPickCommits(pathArg, branchArg, prs); err != nil {
+		checkoutBranch(repoArg, branchArg)
+		if err = cherryPickCommits(repo, prs); err != nil {
 			return err
 		}
 		return nil
@@ -100,26 +88,19 @@ var addCommand *cli.Command = &cli.Command{
 }
 
 // cherry-pick the corresponding commits to the release branch
-func cherryPickCommits(repo string, branch string, prs []*github.PullRequest) error {
-	if !isCurrentBranch(repo, branch) {
-		checkoutBranch(repo, branch)
-	}
+func cherryPickCommits(repo *git.Repository, prs []*gitobj.Commit) error {
 	for _, pr := range prs {
-		if hasCommitInBranch(repo, branch, pr.GetMergeCommitSHA()) {
-			fmt.Println("ignore pull-request '%d' since it has been cherry-picked", pr.GetID())
+		if _, found := findEqualCommitInRepo(repo, pr); found {
+			fmt.Printf("ignore pull-request '%s' since it has been cherry-picked\n", getCommitTitle(pr.Message))
 			continue
 		}
-		if err := executeCommand("cd %s; git cherry-pick %s", repo, pr.GetMergeCommitSHA()); err != nil {
+		if err := executeCommand("cd %s; git cherry-pick %d", repoArg, pr.ID()); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func hasCommitInBranch(repo string, branch string, commitID string) bool {
-	output, err := executeCommandAndGet("cd %s; git branch --contains %s | grep -o %s", repo, commitID, branch)
-	if err != nil && len(output) != 0 {
-		fatalExit(err)
-	}
-	return err == nil
+func findCommitWithPRNumberInRepo(repo *git.Repository, prNumber int) (*gitobj.Commit, bool) {
+	return findCommitContainsStrInRepo(repo, fmt.Sprintf("(#%d)", prNumber))
 }

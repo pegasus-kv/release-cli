@@ -19,11 +19,10 @@ func main() {
 			*submitCommand,
 		},
 		Action: func(c *cli.Context) error {
-			cli.ShowAppHelp(c)
-			return nil
+			return cli.ShowAppHelp(c)
 		},
-		Compiled:              time.Now(),
-		HideVersion:           true,
+		Compiled:    time.Now(),
+		HideVersion: true,
 	}
 
 	if err := app.Run(os.Args); err != nil {

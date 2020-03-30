@@ -9,6 +9,7 @@ import (
 
 	git "gopkg.in/src-d/go-git.v4"
 	gitobj "gopkg.in/src-d/go-git.v4/plumbing/object"
+	gitstorer "gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
 func fatalError(format string, a ...interface{}) error {
@@ -104,4 +105,30 @@ func getCommitForTag(repo *git.Repository, tagName string) *gitobj.Commit {
 		fatalExitIfNotNil(err)
 	}
 	return commit
+}
+
+func findEqualCommitInRepo(repo *git.Repository, commit *gitobj.Commit) (cpCommit *gitobj.Commit, result bool) {
+	// must have the same title
+	return findCommitContainsStrInRepo(repo, getCommitTitle(commit.Message))
+}
+
+func findCommitContainsStrInRepo(repo *git.Repository, substr string) (cpCommit *gitobj.Commit, result bool) {
+	iter, err := repo.Log(&git.LogOptions{})
+	if err != nil {
+		fatalExit(fatalError("unable to perform git log"))
+	}
+
+	result = false
+	err = iter.ForEach(func(c *gitobj.Commit) error {
+		if strings.Contains(getCommitTitle(c.Message), substr) {
+			result = true
+			cpCommit = c // find the counterpart
+			return gitstorer.ErrStop
+		}
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+	return
 }

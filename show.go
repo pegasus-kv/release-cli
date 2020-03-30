@@ -13,26 +13,39 @@ import (
 	gitstorer "gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
+// command flags
+var includeReleased = true
+var short = false
+var versionArg = ""
+
+// var repoArg = ""
+
 // ./release-cli show
 var showCommand *cli.Command = &cli.Command{
 	Name:  "show",
 	Usage: "To show the pull requests that are not released comparing to the given version",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
-			Name:  "repo",
-			Usage: "The path where the git repository locates",
+			Name:        "repo",
+			Usage:       "The path where the git repository locates, ~/pegasus e.g",
+			Required:    true,
+			Destination: &repoArg,
 		},
 		&cli.StringFlag{
-			Name:  "version",
-			Usage: "The released version to compare",
+			Name:        "version",
+			Usage:       "The released version to compare, 1.12 e.g",
+			Required:    true,
+			Destination: &versionArg,
 		},
 		&cli.BoolFlag{
-			Name:  "short",
-			Usage: "Print PR ID and title only",
+			Name:        "short",
+			Usage:       "Print PR ID and title only",
+			Destination: &short,
 		},
 		&cli.BoolFlag{
-			Name:  "unreleased_only",
-			Usage: "Show only the commits that are not merged in release branch",
+			Name:        "released",
+			Usage:       "Show also the commits that are already merged in release branch",
+			Destination: &includeReleased,
 		},
 	},
 	Action: func(ctx *cli.Context) error {
@@ -43,22 +56,11 @@ var showCommand *cli.Command = &cli.Command{
 
 		var err error
 		var repo *git.Repository
-
-		repoArg := ctx.String("repo")
-		versionArg := ctx.String("version")
-
-		// validate --repo
-		if len(repoArg) == 0 {
-			return fatalError("--repo is required")
-		}
 		if repo, err = git.PlainOpen(repoArg); err != nil {
 			return fatalError("cannot open repo '%s': %s", repoArg, err)
 		}
 
 		// validate --version
-		if len(versionArg) == 0 {
-			return fatalError("--version is required")
-		}
 		parts := strings.Split(versionArg, ".")
 		if len(parts) != 2 && len(parts) != 3 {
 			return fatalError("invalid version: %s, version should have 2 or 3 parts, like \"1.11\" or \"1.12.1\"", versionArg)
@@ -84,7 +86,7 @@ var showCommand *cli.Command = &cli.Command{
 		initialCommit := getCommitForTag(repo, initialVer)
 
 		checkoutBranch(repoArg, "master")
-		cpCommit, has := hasEqualCommitInRepo(repo, initialCommit)
+		cpCommit, has := findEqualCommitInRepo(repo, initialCommit)
 		tryTimes := 0
 		for !has {
 			// trace back to the first commit of the release branch: `initialCommit`, this is where the master branch
@@ -100,7 +102,7 @@ var showCommand *cli.Command = &cli.Command{
 			if tryTimes++; tryTimes > 10 {
 				return fatalError("stop. unable to find the equal commits both in master and %s", releaseBranch)
 			}
-			cpCommit, has = hasEqualCommitInRepo(repo, initialCommit)
+			cpCommit, has = findEqualCommitInRepo(repo, initialCommit)
 		}
 
 		// the committed number in release branch is limited, no worry for OOM
@@ -127,8 +129,6 @@ var showCommand *cli.Command = &cli.Command{
 		checkoutBranch(repoArg, "master")
 		// TODO(wutao1): compare the current commit revision with the origin.
 		iter, _ = repo.Log(&git.LogOptions{})
-		short := ctx.Bool("short")
-		unreleasedOnly := ctx.Bool("unreleased_only")
 		unreleasedCount := 0
 		releasedCount = 0
 		fmt.Printf("info: start scanning master branch\n")
@@ -141,7 +141,7 @@ var showCommand *cli.Command = &cli.Command{
 			released := true
 			if commitsMap[commitTitle] != nil {
 				// this commit in master branch has counterpart in release branch, which means this commit is released
-				if unreleasedOnly {
+				if !includeReleased {
 					// skip those that are released already
 					return nil
 				}
@@ -156,10 +156,8 @@ var showCommand *cli.Command = &cli.Command{
 			if !short {
 				daysAfterMerged := time.Since(c.Committer.When).Hours() / 24
 				row = append(row, fmt.Sprintf("%.2f", daysAfterMerged))
-				if !unreleasedOnly && released {
+				if includeReleased && released {
 					row = append(row, "RELEASED")
-				} else if !unreleasedOnly {
-					row = append(row, "")
 				}
 			}
 			tableBulk = append(tableBulk, row)
@@ -169,19 +167,15 @@ var showCommand *cli.Command = &cli.Command{
 			return err
 		}
 
-		printTable(tableBulk, unreleasedOnly, short, unreleasedCount, releasedCount)
+		printTable(tableBulk, unreleasedCount, releasedCount)
 		return nil
 	},
 }
 
-func printTable(
-	tableBulk [][]string,
-	unreleasedOnly, short bool,
-	unreleasedCount, releasedCount int) {
-
+func printTable(tableBulk [][]string, unreleasedCount, releasedCount int) {
 	table := tablewriter.NewWriter(os.Stdout)
 	var header []string
-	if unreleasedOnly {
+	if !includeReleased {
 		header = []string{fmt.Sprintf("PR (%d TOTAL)", unreleasedCount), "TITLE"}
 	} else {
 		header = []string{fmt.Sprintf("PR (%d RELEASED, %d TOTAL)", releasedCount, unreleasedCount+releasedCount), "TITLE"}
@@ -197,25 +191,4 @@ func printTable(
 	table.AppendBulk(tableBulk)
 	table.Render()
 	fmt.Println()
-}
-
-func hasEqualCommitInRepo(repo *git.Repository, commit *gitobj.Commit) (cpCommit *gitobj.Commit, result bool) {
-	iter, err := repo.Log(&git.LogOptions{})
-	if err != nil {
-		fatalExit(fatalError("unable perform git log"))
-	}
-
-	result = false
-	err = iter.ForEach(func(c *gitobj.Commit) error {
-		if strings.Compare(getCommitTitle(c.Message), getCommitTitle(commit.Message)) == 0 {
-			result = true
-			cpCommit = c // find the counterpart
-			return gitstorer.ErrStop
-		}
-		return nil
-	})
-	if err != nil {
-		panic(err)
-	}
-	return
 }

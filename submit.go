@@ -17,67 +17,57 @@ import (
 	gitstorer "gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
+// var versionArg = ""
+// var repoArg = ""
+var accessToken = ""
+
 // ./release-cli submit
 var submitCommand *cli.Command = &cli.Command{
 	Name:  "submit",
 	Usage: "To submit the pull requests to the given release branch",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
-			Name:  "repo",
-			Usage: "The path where the git repository locates",
+			Name:        "repo",
+			Usage:       "The path where the git repository locates",
+			Required:    true,
+			Destination: &repoArg,
 		},
 		&cli.StringFlag{
-			Name:  "version",
-			Usage: "The new release version to submit",
+			Name:        "version",
+			Usage:       "The new release version to submit",
+			Required:    true,
+			Destination: &versionArg,
 		},
 		&cli.StringFlag{
-			Name:   "access",
-			Usage:  "The access token to github, see https://github.com/settings/tokens",
-			EnvVar: "ACCESS_TOKEN",
+			Name:        "access",
+			Usage:       "The access token to github, see https://github.com/settings/tokens",
+			EnvVar:      "ACCESS_TOKEN",
+			Required:    true,
+			Destination: &accessToken,
 		},
 	},
 	Action: func(c *cli.Context) error {
-		if c.NumFlags() == 0 {
-			// show help if no flags given
-			cli.ShowCommandHelp(c, "submit")
-			return nil
-		}
-
 		var err error
 		var repo *git.Repository
 
 		// validate --repo
-		repoArg := c.String("repo")
-		if len(repoArg) == 0 {
-			return fatalError("--repo is required")
-		}
 		if repo, err = git.PlainOpen(repoArg); err != nil {
 			return fatalError("cannot open repo '%s': %s", repoArg, err)
 		}
 
 		// validate --version
-		versionArg := c.String("version")
-		if len(versionArg) == 0 {
-			return fatalError("--version is required")
-		}
 		parts := strings.Split(versionArg, ".")
 		if len(parts) != 3 {
 			return fatalError("invalid version: %s", versionArg)
 		}
-
-		// validate --access
-		accessToken := c.String("access")
-		if len(accessToken) == 0 {
-			return fatalError("--access is required")
-		}
-
 		patchVer, err := strconv.Atoi(parts[2])
 		if err != nil {
 			return err
 		}
 		if patchVer == 0 {
-			return fatalError("Currently patch version == 0 is not supported")
+			return fatalError("currently patch version == 0 is not supported")
 		}
+
 		lastestVer := fmt.Sprintf("v%s.%s.%d", parts[0], parts[1], patchVer-1)
 		lastestVerCommit := getCommitForTag(repo, lastestVer)
 		releaseBranch := fmt.Sprintf("v%s.%s", parts[0], parts[1])
@@ -90,7 +80,7 @@ var submitCommand *cli.Command = &cli.Command{
 		table.SetBorder(false)
 		table.SetColWidth(120)
 		var prs []int
-		iter.ForEach(func(c *gitobj.Commit) error {
+		err = iter.ForEach(func(c *gitobj.Commit) error {
 			commitTitle := getCommitTitle(c.Message)
 			if is, _ := c.IsAncestor(lastestVerCommit); is {
 				return gitstorer.ErrStop
@@ -104,6 +94,9 @@ var submitCommand *cli.Command = &cli.Command{
 			prs = append(prs, prID)
 			return nil
 		})
+		if err != nil {
+			return fatalError("unable to scan git log: %s", err)
+		}
 		fmt.Printf("info: submit %d commits to %s\n\n", len(prs), versionArg)
 		table.Render()
 		fmt.Println()
@@ -112,7 +105,8 @@ var submitCommand *cli.Command = &cli.Command{
 		fatalExitIfNotNil(err)
 		owner, repoName := getOwnerAndRepoFromURL(origin.Config().URLs[0])
 
-		ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+		defer cancel()
 		ts := oauth2.StaticTokenSource(
 			&oauth2.Token{AccessToken: accessToken},
 		)
@@ -120,7 +114,8 @@ var submitCommand *cli.Command = &cli.Command{
 		client := github.NewClient(tc)
 
 		// find existing label for version
-		ctx, _ = context.WithTimeout(context.Background(), time.Second*3)
+		ctx, cancel = context.WithTimeout(context.Background(), time.Second*3)
+		defer cancel()
 		_, resp, err := client.Issues.GetLabel(ctx, owner, repoName, versionArg)
 		if err != nil {
 			if resp.StatusCode == 404 {
@@ -132,7 +127,8 @@ var submitCommand *cli.Command = &cli.Command{
 
 		// Add release label to the specific PR
 		for _, prID := range prs {
-			ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+			defer cancel()
 			pr, _, err := client.PullRequests.Get(ctx, owner, repoName, prID)
 			fatalExitIfNotNil(err)
 			labelAdded := false
