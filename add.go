@@ -81,7 +81,7 @@ var addCommand *cli.Command = &cli.Command{
 
 		checkoutBranch(repoArg, branchArg)
 		if err = cherryPickCommits(repo, prs); err != nil {
-			return err
+			return fatalError(err.Error())
 		}
 		return nil
 	},
@@ -94,8 +94,8 @@ func cherryPickCommits(repo *git.Repository, prs []*gitobj.Commit) error {
 			fmt.Printf("ignore pull-request '%s' since it has been cherry-picked\n", getCommitTitle(pr.Message))
 			continue
 		}
-		if err := executeCommand("cd %s; git cherry-pick %d", repoArg, pr.ID()); err != nil {
-			return err
+		if err := executeCommand("cd %s; git cherry-pick %s", repoArg, pr.ID().String()); err != nil {
+			return fmt.Errorf("unable to cherry pick [%s] \"%s\"\n%s", pr.ID().String()[:10], getCommitTitle(pr.Message), err)
 		}
 	}
 	return nil

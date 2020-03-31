@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/urfave/cli"
@@ -29,11 +28,4 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-}
-
-func isCurrentBranch(repo string, branch string) bool {
-	curBranch, err := executeCommandAndGet("cd %s; git rev-parse --abbrev-ref HEAD", repo)
-	fatalExitIfNotNil(err)
-	curBranch = strings.TrimSpace(curBranch)
-	return strings.Compare(curBranch, branch) == 0
 }

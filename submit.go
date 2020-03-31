@@ -68,10 +68,10 @@ var submitCommand *cli.Command = &cli.Command{
 			return fatalError("currently patch version == 0 is not supported")
 		}
 
-		lastestVer := fmt.Sprintf("v%s.%s.%d", parts[0], parts[1], patchVer-1)
-		lastestVerCommit := getCommitForTag(repo, lastestVer)
 		releaseBranch := fmt.Sprintf("v%s.%s", parts[0], parts[1])
 		releaseBranchRaw := fmt.Sprintf("%s.%s", parts[0], parts[1])
+		lastestVer := getLatestVersionInReleaseBranch(repo, releaseBranch)
+		lastestVerCommit := getCommitForTag(repo, lastestVer)
 
 		checkoutBranch(repoArg, releaseBranch)
 		iter, _ := repo.Log(&git.LogOptions{})
