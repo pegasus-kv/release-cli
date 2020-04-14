@@ -135,10 +135,10 @@ func findCommitContainsStrInRepo(repo *git.Repository, substr string) (cpCommit 
 
 func debugLog(format string, a ...interface{}) {
 	if debug {
-		fmt.Println("debug: ", fmt.Sprintf(format, a...))
+		fmt.Println("debug:", fmt.Sprintf(format, a...))
 	}
 }
 
 func infoLog(format string, a ...interface{}) {
-	fmt.Println("info: ", fmt.Sprintf(format, a...))
+	fmt.Println("info :", fmt.Sprintf(format, a...))
 }
