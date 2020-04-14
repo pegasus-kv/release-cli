@@ -18,6 +18,7 @@ import (
 var includeReleased = true
 var short = false
 var versionArg = ""
+var debug = false
 
 // var repoArg = ""
 
@@ -48,6 +49,11 @@ var showCommand *cli.Command = &cli.Command{
 			Usage:       "Show also the commits that are already merged in release branch",
 			Destination: &includeReleased,
 		},
+		&cli.BoolFlag{
+			Name:        "debug",
+			Usage:       "Put release-cli show in a debug mode.",
+			Destination: &debug,
+		},
 	},
 	Action: func(ctx *cli.Context) error {
 		if ctx.NumFlags() == 0 {
@@ -72,8 +78,10 @@ var showCommand *cli.Command = &cli.Command{
 		fatalExitIfNotNil(err)
 		owner, repoName := getOwnerAndRepoFromURL(origin.Config().URLs[0])
 
-		if len(parts) == 3 {
+		if len(parts) == 3 && !includeReleased {
+			fmt.Println("Use --released if you want to check what have changed after this version")
 			fmt.Printf("If the given version is released before, please find the commits here: https://github.com/%s/%s/labels/%s\n", owner, repoName, versionArg)
+			fmt.Println("NOTE: RC(Release Candidate) versions are not labelled.")
 			return nil
 		}
 
@@ -83,18 +91,30 @@ var showCommand *cli.Command = &cli.Command{
 		// minor version branch.
 
 		releaseBranch := fmt.Sprintf("v%s.%s", parts[0], parts[1])
-		initialVer := getLatestVersionInReleaseBranch(repo, releaseBranch)
+		initialVer := fmt.Sprintf("v%s.%s.0", parts[0], parts[1])
+		var startVer string
+		if len(parts) == 3 { // && includeReleased
+			startVer = "v" + versionArg
+		} else { // len(parts) == 2
+			startVer = getLatestVersionInReleaseBranch(repo, releaseBranch)
+			debugLog("the latest version in %s is %s", releaseBranch, startVer)
+		}
+		checkoutBranch(repoArg, releaseBranch)
 		initialCommit := getCommitForTag(repo, initialVer)
-		fmt.Printf("info: the latest version in %s is %s\n", releaseBranch, initialVer)
 
 		checkoutBranch(repoArg, "master")
-		cpCommit, has := findEqualCommitInRepo(repo, initialCommit)
+		masterInitialCommit, has := findEqualCommitInRepo(repo, initialCommit)
 		tryTimes := 0
 		for !has {
 			// trace back to the first commit of the release branch: `initialCommit`, this is where the master branch
 			// and the release branch are diverged.
+			//
+			// master    1.11
+			// |          |
+			// |/---------| => the diverged point
+			// |
 
-			fmt.Printf("info: commit \"%s\" in branch %s has not counterpart in master, step back\n",
+			debugLog("commit \"%s\" in branch %s has not counterpart in master, step back",
 				strings.TrimSpace(initialCommit.Message), releaseBranch)
 			parent, err := initialCommit.Parent(0)
 			if err != nil {
@@ -104,7 +124,7 @@ var showCommand *cli.Command = &cli.Command{
 			if tryTimes++; tryTimes > 10 {
 				return fatalError("stop. unable to find the equal commits both in master and %s", releaseBranch)
 			}
-			cpCommit, has = findEqualCommitInRepo(repo, initialCommit)
+			masterInitialCommit, has = findEqualCommitInRepo(repo, initialCommit)
 		}
 
 		// the committed number in release branch is limited, no worry for OOM
@@ -112,13 +132,18 @@ var showCommand *cli.Command = &cli.Command{
 		commitsMap := make(map[string]*gitobj.Commit)
 		iter, _ := repo.Log(&git.LogOptions{})
 		releasedCount := 0
-		fmt.Printf("info: start scanning %s branch from commit that's tagged %s \"%s\"\n", releaseBranch, initialVer, getCommitTitle(initialCommit.Message))
+		debugLog("start scanning %s branch from commit that's tagged %s \"%s\"", releaseBranch, initialVer, getCommitTitle(initialCommit.Message))
 		err = iter.ForEach(func(c *gitobj.Commit) error {
 			if is, _ := c.IsAncestor(initialCommit); is {
 				return gitstorer.ErrStop
 			}
+			commitTitle := getCommitTitle(c.Message)
+			if _, err := getPrIDInt(commitTitle); err != nil {
+				fmt.Printf("warn: ignore invalid commit %s: \"%s\"\n", c.ID().String()[:10], commitTitle)
+				return nil
+			}
 			// find the released commits, which are the commits in release branch
-			commitsMap[getCommitTitle(c.Message)] = c
+			commitsMap[commitTitle] = c
 			releasedCount++
 			return nil
 		})
@@ -133,13 +158,18 @@ var showCommand *cli.Command = &cli.Command{
 		iter, _ = repo.Log(&git.LogOptions{})
 		unreleasedCount := 0
 		releasedCount = 0
-		fmt.Printf("info: start scanning master branch\n")
+		debugLog("start scanning master branch")
 		var tableBulk [][]string
 		err = iter.ForEach(func(c *gitobj.Commit) error {
-			if is, _ := c.IsAncestor(cpCommit); is {
+			commitTitle := getCommitTitle(c.Message)
+			if is, _ := c.IsAncestor(masterInitialCommit); is {
+				debugLog("hit the diverged point of master branch and %s branch: %s", releaseBranch, commitTitle)
 				return gitstorer.ErrStop
 			}
-			commitTitle := getCommitTitle(c.Message)
+			if _, err := getPrIDInt(commitTitle); err != nil {
+				fmt.Printf("warn: ignore invalid commit %s: \"%s\"\n", c.ID().String()[:10], commitTitle)
+				return nil
+			}
 			released := true
 			if commitsMap[commitTitle] != nil {
 				// this commit in master branch has counterpart in release branch, which means this commit is released

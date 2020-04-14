@@ -82,7 +82,8 @@ func getPrIDInt(commitMsg string) (int, error) {
 }
 
 func getCommitTitle(commitMsg string) string {
-	return strings.Split(strings.TrimSpace(commitMsg), "\n")[0] // get the first line
+	title := strings.Split(strings.TrimSpace(commitMsg), "\n")[0] // get the first line
+	return strings.TrimSpace(title)
 }
 
 func checkoutBranch(repo, branch string) {
@@ -97,7 +98,6 @@ func getCommitForTag(repo *git.Repository, tagName string) *gitobj.Commit {
 	tagObj, err := repo.TagObject(tag.Hash())
 	var commit *gitobj.Commit
 	if err != nil {
-		fmt.Printf("warn: tag %s is possibly a lightweight tag, not an annotated tag\n", tagName)
 		commit, err = repo.CommitObject(tag.Hash())
 		fatalExitIfNotNil(err)
 	} else {
@@ -131,4 +131,14 @@ func findCommitContainsStrInRepo(repo *git.Repository, substr string) (cpCommit 
 		panic(err)
 	}
 	return
+}
+
+func debugLog(format string, a ...interface{}) {
+	if debug {
+		fmt.Println("debug: ", fmt.Sprintf(format, a...))
+	}
+}
+
+func infoLog(format string, a ...interface{}) {
+	fmt.Println("info: ", fmt.Sprintf(format, a...))
 }
