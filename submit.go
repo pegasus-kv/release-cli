@@ -28,13 +28,13 @@ var submitCommand *cli.Command = &cli.Command{
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:        "repo",
-			Usage:       "The path where the git repository locates",
+			Usage:       "The path where the git repository locates. /home/pegasus eg.",
 			Required:    true,
 			Destination: &repoArg,
 		},
 		&cli.StringFlag{
 			Name:        "version",
-			Usage:       "The new release version to submit",
+			Usage:       "The new release version to submit. 1.12.3 eg.",
 			Required:    true,
 			Destination: &versionArg,
 		},
@@ -62,16 +62,17 @@ var submitCommand *cli.Command = &cli.Command{
 		}
 		patchVer, err := strconv.Atoi(parts[2])
 		if err != nil {
-			return err
+			return fatalError("%s is an invalid version: %s", versionArg, err)
 		}
 		if patchVer == 0 {
-			return fatalError("currently patch version == 0 is not supported")
+			return fatalError("patch version == 0 is currently not supported")
 		}
 
 		releaseBranch := fmt.Sprintf("v%s.%s", parts[0], parts[1])
 		releaseBranchRaw := fmt.Sprintf("%s.%s", parts[0], parts[1])
-		lastestVer := getLatestVersionInReleaseBranch(repo, releaseBranch)
+		lastestVer := fmt.Sprintf("v%s.%s.%d", parts[0], parts[1], patchVer-1)
 		lastestVerCommit := getCommitForTag(repo, lastestVer)
+		infoLog("the previous version is %s", lastestVer)
 
 		checkoutBranch(repoArg, releaseBranch)
 		iter, _ := repo.Log(&git.LogOptions{})

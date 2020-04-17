@@ -142,3 +142,11 @@ func debugLog(format string, a ...interface{}) {
 func infoLog(format string, a ...interface{}) {
 	fmt.Println("info :", fmt.Sprintf(format, a...))
 }
+
+func errorLog(format string, a ...interface{}) {
+	fmt.Println("error:", fmt.Sprintf(format, a...))
+}
+
+func warnLog(format string, a ...interface{}) {
+	fmt.Println("warn :", fmt.Sprintf(format, a...))
+}

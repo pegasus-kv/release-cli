@@ -93,9 +93,11 @@ var showCommand *cli.Command = &cli.Command{
 		var startVer string
 		if len(parts) == 3 { // && includeReleased
 			startVer = "v" + versionArg
+			infoLog("searching PRs that are committed to %s after version %s", releaseBranch, startVer)
 		} else { // len(parts) == 2
 			startVer = getLatestVersionInReleaseBranch(repo, releaseBranch)
-			debugLog("the latest version in %s is %s", releaseBranch, startVer)
+			infoLog("searching PRs that are not released in %s", releaseBranch)
+			infoLog("searching starts from the latest version in %s: %s", releaseBranch, startVer)
 		}
 		debugLog("will skip commits before version %s", startVer)
 		checkoutBranch(repoArg, releaseBranch)
@@ -150,7 +152,7 @@ var showCommand *cli.Command = &cli.Command{
 			}
 			commitToVersionMap[commitTitle] = currentVersion
 			if _, err := getPrIDInt(commitTitle); err != nil {
-				fmt.Printf("warn: ignore invalid commit %s: \"%s\"\n", c.ID().String()[:10], commitTitle)
+				warnLog("ignore invalid commit %s: \"%s\"", c.ID().String()[:10], commitTitle)
 				return nil
 			}
 			releasedCount++
@@ -176,7 +178,7 @@ var showCommand *cli.Command = &cli.Command{
 				return gitstorer.ErrStop
 			}
 			if _, err := getPrIDInt(commitTitle); err != nil {
-				fmt.Printf("warn: ignore invalid commit %s: \"%s\"\n", c.ID().String()[:10], commitTitle)
+				warnLog("ignore invalid commit %s: \"%s\"", c.ID().String()[:10], commitTitle)
 				return nil
 			}
 			ver, ok := commitToVersionMap[commitTitle]
@@ -262,7 +264,8 @@ func getAllVersionsInMinorVersion(repo *git.Repository, releaseBranch string) ma
 		if strings.HasPrefix(ver, releaseBranch) {
 			commit, err := repo.CommitObject(ref.Hash())
 			if err != nil {
-				fatalExit(fatalError("unable to find commit for tag %s: %s", ver, err))
+				warnLog("unable to find commit for tag %s: %s", ver, err)
+				return nil
 			}
 			versions[getCommitTitle(commit.Message)] = ver
 		}
