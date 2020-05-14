@@ -100,7 +100,7 @@ var showCommand *cli.Command = &cli.Command{
 			parts = strings.Split(latestVer, ".")
 			releaseBranch = fmt.Sprintf("%s.%s", parts[0], parts[1])
 			newDivergedVer := getInitialVersionInReleaseBranch(repo, releaseBranch) // 1.12.0-RC1 in the above example
-			newDivergedCommit := getCommitForTag(repo, divergedVer)
+			newDivergedCommit := getCommitForTag(repo, newDivergedVer)
 			checkoutBranch(repoArg, releaseBranch)
 			forEachGitLogUntil(repo, func(c *gitobj.Commit) {
 				if is, _ := c.IsAncestor(newDivergedCommit); !is {
@@ -205,6 +205,9 @@ func printTable(tableBulk [][]string, unreleasedCount, releasedCount int) {
 	}
 	if !short { // print other details
 		header = append(header, "Days after commit")
+		if includeReleased {
+			header = append(header, "Version")
+		}
 	}
 	fmt.Println()
 	table.SetHeader(header)

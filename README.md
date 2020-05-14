@@ -18,9 +18,9 @@ we tag the `HEAD` revision to the version, 1.11.7, e.g. Usually we will make one
 pull-request is released or pre-released we usually use Github Labels, for example a
 label '1.11.7' to the PR.
 
-So the entire procedure of release can be concluded:
+So the entire procedure of a release can be concluded:
 
-0. Review what're changed recently.
+0. Review what are changed recently.
 1. Cherry-pick some pull-requests.
 2. Tag this release.
 3. Label the included pull-requests.
@@ -44,7 +44,7 @@ It's recommended to re-clone the repo to different location with your developmen
 ./release-cli show --repo '/home/wutao1/pegasus/rdsn'
 ```
 
-This command compares the master branch with the latest version (`v1.12.3`), showing the commits not released.
+This command compares the master branch with the latest version (`v1.12.3` e.g), showing the commits not released.
 
 Outputs:
 
@@ -59,7 +59,7 @@ Outputs:
 ...
 ```
 
-If you want to view the commits that're officially released in some version, 1.12.3 for example,
+If you want to view the commits that have been officially released in some version, 1.12.3 for example,
 go check the github label <https://github.com/XiaoMi/pegasus/pulls?q=is%3Apr+label%3A1.12.3>.
 
 If you want to view the commits that have been pre-released but not offically released,
@@ -72,18 +72,18 @@ check this way:
 This is useful to check what will be released in the upcoming version.
 
 ```txt
-| PR (50 RELEASED, 76 TOTAL) |                                            TITLE                                            | DAYS AFTER COMMIT |             |
+| PR (50 RELEASED, 76 TOTAL) |                                            TITLE                                | DAYS AFTER COMMIT |             |
 ...
-| XiaoMi/rdsn#446            | fix(asan): heap-use-after-free caused by using string_view in fail_point                    |             19.69 |
-| XiaoMi/rdsn#418            | feat: append mlog in fixed-size blocks using log_appender                                   |             27.04 |
-| XiaoMi/rdsn#436            | refactor: simplify mutation_log write_pending_mutations                                     |             30.18 |
-| XiaoMi/rdsn#435            | feat: tcmalloc memory release improvements                                                  |             33.10 | v1.12.3-RC3 |
-| XiaoMi/rdsn#434            | refactor(backup): move collect_backup_info to replica_backup_manager                        |             35.11 |
-| XiaoMi/rdsn#432            | refactor(backup): make backup clear decoupled from on_cold_backup                           |             36.20 |
-| XiaoMi/rdsn#430            | refactor(backup): delay the removal of checkpoint files produced by cold backup             |             43.14 | v1.12.3-RC2 |
-| XiaoMi/rdsn#431            | refactor: move log-block-writing-related codes from mutation_log to log_block               |             46.98 | v1.12.3-RC1 |
-| XiaoMi/rdsn#429            | feat(dup): support multiple fail modes for duplication                                      |             47.08 | v1.12.3-RC1 |
-| XiaoMi/rdsn#427            | refactor: move log_block class from mutation_log.h to separated file                        |             49.02 | v1.12.3-RC1 |
+| XiaoMi/rdsn#446            | fix(asan): heap-use-after-free caused by using string_view in fail_point        |             19.69 |
+| XiaoMi/rdsn#418            | feat: append mlog in fixed-size blocks using log_appender                       |             27.04 |
+| XiaoMi/rdsn#436            | refactor: simplify mutation_log write_pending_mutations                         |             30.18 |
+| XiaoMi/rdsn#435            | feat: tcmalloc memory release improvements                                      |             33.10 | v1.12.3-RC3 |
+| XiaoMi/rdsn#434            | refactor(backup): move collect_backup_info to replica_backup_manager            |             35.11 |
+| XiaoMi/rdsn#432            | refactor(backup): make backup clear decoupled from on_cold_backup               |             36.20 |
+| XiaoMi/rdsn#430            | refactor(backup): delay the removal of checkpoint files produced by cold backup |             43.14 | v1.12.3-RC2 |
+| XiaoMi/rdsn#431            | refactor: move log-block-writing-related codes from mutation_log to log_block   |             46.98 | v1.12.3-RC1 |
+| XiaoMi/rdsn#429            | feat(dup): support multiple fail modes for duplication                          |             47.08 | v1.12.3-RC1 |
+| XiaoMi/rdsn#427            | refactor: move log_block class from mutation_log.h to separated file            |             49.02 | v1.12.3-RC1 |
 ...
 ```
 
