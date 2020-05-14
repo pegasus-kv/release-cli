@@ -150,3 +150,17 @@ func errorLog(format string, a ...interface{}) {
 func warnLog(format string, a ...interface{}) {
 	fmt.Println("warn :", fmt.Sprintf(format, a...))
 }
+
+func forEachGitLogUntil(repo *git.Repository, handler func(c *gitobj.Commit), stopCommit *gitobj.Commit) {
+	iter, _ := repo.Log(&git.LogOptions{})
+	err := iter.ForEach(func(c *gitobj.Commit) error {
+		if stopCommit != nil {
+			if is, _ := c.IsAncestor(stopCommit); is {
+				return gitstorer.ErrStop
+			}
+		}
+		handler(c)
+		return nil
+	})
+	fatalExitIfNotNil(err)
+}
