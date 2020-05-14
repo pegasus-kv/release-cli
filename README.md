@@ -15,11 +15,13 @@ For example, a feature that is not ready but some parts of it were committed to 
 shall not be included in current release. After some cherry-picks to the release branch,
 we tag the `HEAD` revision to the version, 1.11.7, e.g. Usually we will make one or more
 'RC' versions (aka Release Candidate) before the final release. To identify whether a merged
-pull-request is officially released we usually use Github Labels, for example a label '1.11.7' to the PR.
+pull-request is released or pre-released we usually use Github Labels, for example a
+label '1.11.7' to the PR.
 
 So the entire procedure of release can be concluded:
 
-1. Cherry-pick some pull-requests
+0. Review what're changed recently.
+1. Cherry-pick some pull-requests.
 2. Tag this release.
 3. Label the included pull-requests.
 
@@ -39,10 +41,10 @@ It's recommended to re-clone the repo to different location with your developmen
 ### To show the pull requests that are not released, and how much time after the changes were committed (the 'Release velocity')
 
 ```sh
-./release-cli show --repo '/home/wutao1/pegasus/rdsn' --version '1.12'
+./release-cli show --repo '/home/wutao1/pegasus/rdsn'
 ```
 
-This command compares the master branch with the latest version of v1.12 branch (`v1.12.3`), showing the commits not released.
+This command compares the master branch with the latest version (`v1.12.3`), showing the commits not released.
 
 Outputs:
 
@@ -64,7 +66,7 @@ If you want to view the commits that have been pre-released but not offically re
 check this way:
 
 ```sh
-./release-cli show --repo '/home/wutao1/pegasus/rdsn' --version '1.12.3-RC1' --released
+./release-cli show --repo '/home/wutao1/pegasus/rdsn' --released
 ```
 
 This is useful to check what will be released in the upcoming version.
@@ -88,7 +90,7 @@ This is useful to check what will be released in the upcoming version.
 ### To specify the pull requests to 1.11 of Pegasus
 
 ```sh
-./release-cli add --repo '/home/wutao1/pegasus' --branch '1.11' 242 243 246
+./release-cli add --repo /home/wutao1/pegasus --branch 1.11 242 243 246
 ```
 
 This command will cherry-pick the corresponding commits of the PRs to the 1.11 branch.
@@ -99,12 +101,13 @@ In our above example, the `origin` must be "<https://github.com/XiaoMi/pegasus.g
 ### To submit the cherry-picks and make a new release 1.11.6
 
 ```sh
-./release-cli submit --repo '/home/wutao1/pegasus' --branch '1.11' --version='1.11.6'
+./release-cli submit --repo /home/wutao1/pegasus --version=1.11.7 --access <ACCESS_TOKEN>
 ```
 
-This command will tag the `HEAD` revision to '1.11.6', label the submitted cherry-picks
-with `1.11.6` on Github as well, so that which version the PR was picked can be
-located easily.
+This command will label the submitted but not released cherry-picks in branch 1.11
+with `1.11.7` on Github as well, so that which version the PR was picked can be
+located easily. For example, in <https://github.com/XiaoMi/rdsn/issues?q=label%3A1.12.3+is%3Aclosed>
+you can find all 1.12.3 changes.
 
 ### To release a minor/major version (2.0 e.g.)
 
