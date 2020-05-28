@@ -77,12 +77,11 @@ var showCommand *cli.Command = &cli.Command{
 		checkoutBranch(repoArg, releaseBranch)
 		commitToVersionMap := make(map[string]string)
 		if latestVer := getLatestVersion(repo); !strings.HasPrefix(latestVer, releaseBranch) {
-			// The latest version is an upcoming minor release, which is forked from the master.
+			// If it's an upcoming minor release (branched from master).
 
-			// Those commits between the two diverged points, but not in the previous release branch,
-			// are certainly in the new minor version.
-			// For example, those between 1.11.0-RC1 and 1.12.0-RC1, but not in 1.11, are the commits
-			// of 1.12.0-RC1.
+			// The commits between the two diverged points (1.11.0-RC1, 1.12.0-RC1 e.g)
+			// but not in the previous release branch,
+			// are certainly in the new minor version (1.12.0).
 			//
 			// |/
 			// |------- 1.12.0-RC1
@@ -92,8 +91,9 @@ var showCommand *cli.Command = &cli.Command{
 			// |------- 1.11.0-RC1
 			// |
 
-			// First tag all the commits in the previous release branch
+			// Firstly tag all the commits in the previous release branch (1.11 in the above example)
 			forEachGitLogUntil(repo, func(c *gitobj.Commit) {
+				// tag commits between 1.11.0-RC1 ~ 1.11.6 to "v1.11"
 				commitToVersionMap[getCommitTitle(c.Message)] = releaseBranch
 			}, divergedCommit)
 
@@ -101,20 +101,21 @@ var showCommand *cli.Command = &cli.Command{
 			releaseBranch = fmt.Sprintf("%s.%s", parts[0], parts[1])
 			newDivergedVer := getInitialVersionInReleaseBranch(repo, releaseBranch) // 1.12.0-RC1 in the above example
 			newDivergedCommit := getCommitForTag(repo, newDivergedVer)
-			checkoutBranch(repoArg, releaseBranch)
+			checkoutBranch(repoArg, releaseBranch) // checkout v1.12
 			forEachGitLogUntil(repo, func(c *gitobj.Commit) {
 				if is, _ := c.IsAncestor(newDivergedCommit); !is {
 					return
 				}
 				commitTitle := getCommitTitle(c.Message)
 				if _, ok := commitToVersionMap[commitTitle]; !ok {
+					// if not tagged "v1.11", it must belong to "v1.12.0-RC1"
 					commitToVersionMap[commitTitle] = newDivergedVer
 				}
 			}, divergedCommit)
 			infoLog("found the new diverged point %s: %s", newDivergedVer, newDivergedCommit.ID().String()[:10])
 		}
 		versions := mapCommitTitleToVersion(repo, releaseBranch)
-		currentVersion := "" // by default empty, means this commit is not released in any version
+		currentVersion := "cherry-picked" // not this commit is not released but is cherry-picked
 		forEachGitLogUntil(repo, func(c *gitobj.Commit) {
 			commitTitle := getCommitTitle(c.Message)
 			if ver, ok := versions[commitTitle]; ok {
@@ -165,13 +166,13 @@ var showCommand *cli.Command = &cli.Command{
 			}
 			ver, ok := commitToVersionMap[commitTitle]
 			verObj, _ := version.NewVersion(ver)
-			if ver != "" && !latestReleasedVer.LessThan(verObj) {
+			if ver != "" && ver != "cherry-picked" && !latestReleasedVer.LessThan(verObj) {
 				// has released in versions lower than --version
 				debugLog("skip \"%s\" of version %s", commitTitle, ver)
 				return
 			}
 			if ok {
-				if ver != "" && !includeReleased {
+				if ver != "" && ver != "cherry-picked" && !includeReleased {
 					// skip those that are released already
 					return
 				}
