@@ -4,20 +4,18 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/go-github/v28/github"
+	"github.com/hashicorp/go-version"
 	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli"
 	"golang.org/x/oauth2"
 	git "gopkg.in/src-d/go-git.v4"
-	gitobj "gopkg.in/src-d/go-git.v4/plumbing/object"
-	gitstorer "gopkg.in/src-d/go-git.v4/plumbing/storer"
 )
 
-// var versionArg = ""
 // var repoArg = ""
 var accessToken = ""
 
@@ -31,12 +29,6 @@ var submitCommand *cli.Command = &cli.Command{
 			Usage:       "The path where the git repository locates. /home/pegasus eg.",
 			Required:    true,
 			Destination: &repoArg,
-		},
-		&cli.StringFlag{
-			Name:        "version",
-			Usage:       "The new release version to submit. 1.12.3 eg.",
-			Required:    true,
-			Destination: &versionArg,
 		},
 		&cli.StringFlag{
 			Name:        "access",
@@ -55,52 +47,43 @@ var submitCommand *cli.Command = &cli.Command{
 			return fatalError("cannot open repo '%s': %s", repoArg, err)
 		}
 
-		// validate --version
-		parts := strings.Split(versionArg, ".")
-		if len(parts) != 3 {
-			return fatalError("invalid version: %s", versionArg)
-		}
-		patchVer, err := strconv.Atoi(parts[2])
+		latestVer := getLatestVersion(repo)
+		latestVerObj, err := version.NewSemver(latestVer)
 		if err != nil {
-			return fatalError("%s is an invalid version: %s", versionArg, err)
+			return fatalError("latest version is invalid to be released: %s, %s", latestVer, err)
 		}
-		if patchVer == 0 {
-			return fatalError("patch version == 0 is currently not supported")
+		if latestVerObj.Prerelease() != "" {
+			return fatalError("repo is still in pre-released state: %s", latestVer)
 		}
 
-		releaseBranch := fmt.Sprintf("v%s.%s", parts[0], parts[1])
-		releaseBranchRaw := fmt.Sprintf("%s.%s", parts[0], parts[1])
-		lastestVer := fmt.Sprintf("v%s.%s.%d", parts[0], parts[1], patchVer-1)
-		lastestVerCommit := getCommitForTag(repo, lastestVer)
-		infoLog("the previous version is %s", lastestVer)
+		versions := getAllVersions(repo, nil)
+		sort.Sort(sort.Reverse(version.Collection(versions)))
+		var pastReleasedVer *version.Version
+		for _, v := range versions[1:] {
+			if v.Prerelease() == "" {
+				pastReleasedVer = v
+				break
+			}
+		}
+		infoLog("submitting PRs between %s and %s", pastReleasedVer, latestVer)
 
-		checkoutBranch(repoArg, releaseBranch)
-		iter, _ := repo.Log(&git.LogOptions{})
 		table := tablewriter.NewWriter(os.Stdout)
 		table.SetHeader([]string{"PR", "Title"})
 		table.SetBorder(false)
 		table.SetColWidth(120)
 		var prs []int
-		err = iter.ForEach(func(c *gitobj.Commit) error {
-			commitTitle := getCommitTitle(c.Message)
-			if is, _ := c.IsAncestor(lastestVerCommit); is {
-				return gitstorer.ErrStop
-			}
-			prID, err := getPrIDInt(commitTitle)
+		for _, c := range getAllCommitsPickedForUpcomingRelease(repo, pastReleasedVer.String()) {
+			prID, err := getPrIDInt(c.title)
 			if err != nil {
-				fmt.Printf("warn: %s, step back\n", err)
-				return nil
+				warnLog("unable to get PR ID from commit \"%s\"", c.title)
+				continue
 			}
-			table.Append([]string{fmt.Sprintf("#%d", prID), commitTitle})
+			table.Append([]string{fmt.Sprintf("#%d", prID), c.title})
 			prs = append(prs, prID)
-			return nil
-		})
-		if err != nil {
-			return fatalError("unable to scan git log: %s", err)
 		}
-		fmt.Printf("info: submit %d commits to %s\n\n", len(prs), versionArg)
+		infoLog("submit %d commits to %s\n", len(prs), getLatestVersion(repo))
 		table.Render()
-		fmt.Println()
+		println()
 
 		origin, err := repo.Remote("origin")
 		fatalExitIfNotNil(err)
@@ -115,18 +98,20 @@ var submitCommand *cli.Command = &cli.Command{
 		client := github.NewClient(tc)
 
 		// find existing label for version
+		newLabel := latestVer[1:] // remove prefixed 'v'
 		ctx, cancel = context.WithTimeout(context.Background(), time.Second*3)
 		defer cancel()
-		_, resp, err := client.Issues.GetLabel(ctx, owner, repoName, versionArg)
+		_, resp, err := client.Issues.GetLabel(ctx, owner, repoName, newLabel)
 		if err != nil {
 			if resp.StatusCode == 404 {
-				fmt.Printf("info: create github label %s\n", versionArg)
-				_, _, err = client.Issues.CreateLabel(ctx, owner, repoName, &github.Label{Name: &versionArg})
+				fmt.Printf("info: create github label %s\n", latestVer)
+				_, _, err = client.Issues.CreateLabel(ctx, owner, repoName, &github.Label{Name: &newLabel})
 			}
 			fatalExitIfNotNil(err)
 		}
 
 		// Add release label to the specific PR
+		releaseBranchRaw := getBranch(latestVer)[1:] // remove prefixed 'v'
 		for _, prID := range prs {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 			defer cancel()
@@ -135,15 +120,15 @@ var submitCommand *cli.Command = &cli.Command{
 			labelAdded := false
 			for _, label := range pr.Labels {
 				if strings.HasPrefix(label.GetName(), releaseBranchRaw) {
-					fmt.Printf("info: #%d is already labeled to %s\n", prID, versionArg)
+					fmt.Printf("info: #%d is already labeled to %s\n", prID, newLabel)
 					labelAdded = true
 					break
 				}
 			}
 			if !labelAdded {
-				_, _, err := client.Issues.AddLabelsToIssue(ctx, owner, repoName, prID, []string{versionArg})
+				_, _, err := client.Issues.AddLabelsToIssue(ctx, owner, repoName, prID, []string{newLabel})
 				fatalExitIfNotNil(err)
-				fmt.Printf("info: add github label %s to #%d\n", versionArg, prID)
+				fmt.Printf("info: add github label %s to #%d\n", latestVer, prID)
 			}
 		}
 		return nil

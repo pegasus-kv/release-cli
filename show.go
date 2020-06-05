@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -17,7 +16,6 @@ import (
 )
 
 // command flags
-var includeReleased = true
 var short = false
 var versionArg = ""
 var debug = false
@@ -41,11 +39,6 @@ var showCommand *cli.Command = &cli.Command{
 			Destination: &short,
 		},
 		&cli.BoolFlag{
-			Name:        "released",
-			Usage:       "Show also the commits that are already merged in release branch",
-			Destination: &includeReleased,
-		},
-		&cli.BoolFlag{
 			Name:        "debug",
 			Usage:       "Put release-cli show in a debug mode.",
 			Destination: &debug,
@@ -63,152 +56,57 @@ var showCommand *cli.Command = &cli.Command{
 		fatalExitIfNotNil(err)
 		owner, repoName := getOwnerAndRepoFromURL(origin.Config().URLs[0])
 
-		latestReleasedVer := getLatestReleasedVersion(repo)
-		parts := strings.Split(latestReleasedVer.Original(), ".")
-		releaseBranch := fmt.Sprintf("%s.%s", parts[0], parts[1])
-		infoLog("searching starts from the latest released version in %s", latestReleasedVer.Original())
-
 		// Find the initial commit of the minor version, and find the commits
 		// afterwards in master branch.
 
-		divergedVer := getInitialVersionInReleaseBranch(repo, releaseBranch) // the version where master and release branch are diverged.
-		divergedCommit := getCommitForTag(repo, divergedVer)
-		infoLog("the diverged point of master and %s is %s: %s", releaseBranch, divergedVer, divergedCommit.ID().String()[:10])
-		checkoutBranch(repoArg, releaseBranch)
-		commitToVersionMap := make(map[string]string)
-		if latestVer := getLatestVersion(repo); !strings.HasPrefix(latestVer, releaseBranch) {
-			// If it's an upcoming minor release (branched from master).
-
-			// The commits between the two diverged points (1.11.0-RC1, 1.12.0-RC1 e.g)
-			// but not in the previous release branch,
-			// are certainly in the new minor version (1.12.0).
-			//
-			// |/
-			// |------- 1.12.0-RC1
-			// |
-			// | /----- 1.11.6
-			// |/
-			// |------- 1.11.0-RC1
-			// |
-
-			// Firstly tag all the commits in the previous release branch (1.11 in the above example)
-			forEachGitLogUntil(repo, func(c *gitobj.Commit) {
-				// tag commits between 1.11.0-RC1 ~ 1.11.6 to "v1.11"
-				commitToVersionMap[getCommitTitle(c.Message)] = releaseBranch
-			}, divergedCommit)
-
-			parts = strings.Split(latestVer, ".")
-			releaseBranch = fmt.Sprintf("%s.%s", parts[0], parts[1])
-			newDivergedVer := getInitialVersionInReleaseBranch(repo, releaseBranch) // 1.12.0-RC1 in the above example
-			newDivergedCommit := getCommitForTag(repo, newDivergedVer)
-			checkoutBranch(repoArg, releaseBranch) // checkout v1.12
-			forEachGitLogUntil(repo, func(c *gitobj.Commit) {
-				if is, _ := c.IsAncestor(newDivergedCommit); !is {
-					return
-				}
-				commitTitle := getCommitTitle(c.Message)
-				if _, ok := commitToVersionMap[commitTitle]; !ok {
-					// if not tagged "v1.11", it must belong to "v1.12.0-RC1"
-					commitToVersionMap[commitTitle] = newDivergedVer
-				}
-			}, divergedCommit)
-			infoLog("found the new diverged point %s: %s", newDivergedVer, newDivergedCommit.ID().String()[:10])
-		}
-		versions := mapCommitTitleToVersion(repo, releaseBranch)
-		currentVersion := "cherry-picked" // not this commit is not released but is cherry-picked
-		forEachGitLogUntil(repo, func(c *gitobj.Commit) {
-			commitTitle := getCommitTitle(c.Message)
-			if ver, ok := versions[commitTitle]; ok {
-				currentVersion = ver
-			}
-			if _, ok := commitToVersionMap[commitTitle]; !ok {
-				commitToVersionMap[commitTitle] = currentVersion
-			}
-		}, divergedCommit)
-
-		checkoutBranch(repoArg, "master")
-		masterDivergedCommit, has := findEqualCommitInRepo(repo, divergedCommit)
-		tryTimes := 0
-		for !has {
-			// trace back to the first commit of the release branch: `initialCommit`, this is where the master branch
-			// and the release branch are diverged.
-			//
-			// master    1.11
-			// |          |
-			// |/---------| => where the branch is forked (`masterDivergedCommit`)
-			// |
-
-			debugLog("commit \"%s\" in branch %s has not counterpart in master, step back",
-				strings.TrimSpace(divergedCommit.Message), releaseBranch)
-			parent, err := divergedCommit.Parent(0)
-			if err != nil {
-				return fatalError("unable to find parent for commit: %s", divergedCommit.Hash)
-			}
-			divergedCommit = parent
-			if tryTimes++; tryTimes > 10 {
-				return fatalError("stop. unable to find the equal commits both in master and %s", releaseBranch)
-			}
-			masterDivergedCommit, has = findEqualCommitInRepo(repo, divergedCommit)
-		}
-
-		// find the counterpart in master branch, if not, print it in the table
-		checkoutBranch(repoArg, "master")
-		// TODO(wutao1): compare the current commit revision with the origin.
-		unreleasedCount := 0
-		releasedCount := 0
-		debugLog("start scanning master branch")
+		pickedCommits := getAllCommitsPickedForUpcomingRelease(repo, getLatestReleasedVersion(repo).Original())
+		notPickedCommits := getAllCommitsNotPicked(repo)
+		commits := append(notPickedCommits, pickedCommits...)
 		var tableBulk [][]string
-		forEachGitLogUntil(repo, func(c *gitobj.Commit) {
-			commitTitle := getCommitTitle(c.Message)
-			if _, err := getPrIDInt(commitTitle); err != nil {
-				warnLog("ignore invalid commit: \"%s\"", commitTitle)
-				return
+		for _, c := range commits {
+			row := &rowForCommit{
+				owner:           owner,
+				repoName:        repoName,
+				version:         c.version,
+				title:           c.title,
+				daysAfterMerged: c.daysAfterMerged,
 			}
-			ver, ok := commitToVersionMap[commitTitle]
-			verObj, _ := version.NewVersion(ver)
-			if ver != "" && ver != "cherry-picked" && !latestReleasedVer.LessThan(verObj) {
-				// has released in versions lower than --version
-				debugLog("skip \"%s\" of version %s", commitTitle, ver)
-				return
-			}
-			if ok {
-				if ver != "" && ver != "cherry-picked" && !includeReleased {
-					// skip those that are released already
-					return
-				}
-				releasedCount++
-			} else {
-				unreleasedCount++
-			}
-			row := []string{
-				fmt.Sprintf("%s/%s%s", owner, repoName, getPrID(commitTitle)),
-				commitTitle[:strings.LastIndex(commitTitle, "(")]} // drop the PrID part, because the PR column has included
-			if !short {
-				daysAfterMerged := time.Since(c.Committer.When).Hours() / 24
-				row = append(row, fmt.Sprintf("%.2f", daysAfterMerged))
-				row = append(row, ver)
-			}
-			tableBulk = append(tableBulk, row)
-		}, masterDivergedCommit)
-
-		printTable(tableBulk, unreleasedCount, releasedCount)
+			tableBulk = append(tableBulk, row.toColumns())
+		}
+		printTable(tableBulk, len(pickedCommits), len(notPickedCommits))
 		return nil
 	},
 }
 
-func printTable(tableBulk [][]string, unreleasedCount, releasedCount int) {
+type rowForCommit struct {
+	owner           string
+	repoName        string
+	version         string
+	title           string
+	daysAfterMerged float64
+}
+
+func (row *rowForCommit) toColumns() []string {
+	if _, err := getPrIDInt(row.title); err != nil {
+		warnLog("ignore invalid commit: \"%s\"", row.title)
+		return nil
+	}
+	columns := []string{
+		fmt.Sprintf("%s/%s%s", row.owner, row.repoName, getPrID(row.title)),
+		row.title[:strings.LastIndex(row.title, "(")]} // drop the PrID part, because the PR column has included
+	if !short {
+		columns = append(columns, fmt.Sprintf("%.2f", row.daysAfterMerged))
+		columns = append(columns, row.version)
+	}
+	return columns
+}
+
+func printTable(tableBulk [][]string, pickedCount, notPickedCount int) {
 	table := tablewriter.NewWriter(os.Stdout)
 	var header []string
-	if !includeReleased {
-		header = []string{fmt.Sprintf("PR (%d TOTAL)", unreleasedCount), "TITLE"}
-	} else {
-		header = []string{fmt.Sprintf("PR (%d RELEASED, %d TOTAL)", releasedCount, unreleasedCount+releasedCount), "TITLE"}
-	}
+	header = []string{fmt.Sprintf("PR (%d TOTAL, %d PICKED)", pickedCount+notPickedCount, pickedCount), "TITLE"}
 	if !short { // print other details
 		header = append(header, "Days after commit")
-		if includeReleased {
-			header = append(header, "Version")
-		}
 	}
 	fmt.Println()
 	table.SetHeader(header)
@@ -262,6 +160,8 @@ func getInitialVersionInReleaseBranch(repo *git.Repository, releaseBranch string
 	return versions[0].Original()
 }
 
+// Returns the latest version, not including pre-released versions.
+// For example, given v1.11.1, v1.11.2, v1.11.3-RC1, this function returns v1.11.2.
 func getLatestReleasedVersion(repo *git.Repository) *version.Version {
 	versions := getAllVersions(repo, nil)
 	sort.Sort(sort.Reverse(version.Collection(versions)))
@@ -351,17 +251,143 @@ func getPreviousReleaseBranch(repo *git.Repository, branch string) string {
 	return branches[idx-1]
 }
 
-func validateVersionArg(repo *git.Repository) error {
-	if matched, _ := regexp.MatchString(`\d+\.\d+(\.\d+)?(-RC\d+)?`, versionArg); !matched {
-		return fatalError("invalid version: %s, version should have 2 or 3 parts, like \"1.11\" or \"1.12.1\" or \"2.0.0-RC1\"", versionArg)
+func getBranch(ver string) string {
+	parts := strings.Split(ver, ".")
+	branch := fmt.Sprintf("%s.%s", parts[0], parts[1])
+	if branch[0] == 'v' {
+		return branch
 	}
-	parts := strings.Split(versionArg, ".")
-	releaseBranch := fmt.Sprintf("v%s.%s", parts[0], parts[1])
-	if !hasBranch(repo, releaseBranch) {
-		return fatalError("no such branch \"%s\", please check `git branch` for all branches", releaseBranch)
+	return "v" + branch
+}
+
+type simpleCommit struct {
+	title           string
+	version         string
+	daysAfterMerged float64
+}
+
+// Gets commits reside in master but not cherry-picked to release branch
+func getAllCommitsNotPicked(repo *git.Repository) []*simpleCommit {
+	releaseBranch := getBranch(getLatestVersion(repo))
+	divergedCommit := getCommitForTag(repo, getInitialVersionInReleaseBranch(repo, releaseBranch))
+
+	checkoutBranch(repoArg, "master")
+	masterDivergedCommit, has := findEqualCommitInRepo(repo, divergedCommit)
+	tryTimes := 0
+	for !has {
+		// trace back to the first commit of the release branch: `initialCommit`, this is where the master branch
+		// and the release branch are diverged.
+		//
+		// master    1.11
+		// |          |
+		// |/---------| => where the branch is forked (`masterDivergedCommit`)
+		// |
+
+		debugLog("commit \"%s\" in branch %s has not counterpart in master, step back",
+			strings.TrimSpace(divergedCommit.Message), releaseBranch)
+		parent, err := divergedCommit.Parent(0)
+		if err != nil {
+			fatalExit(fatalError("unable to find parent for commit: %s", divergedCommit.Hash))
+		}
+		divergedCommit = parent
+		if tryTimes++; tryTimes > 10 {
+			fatalExit(fatalError("stop. unable to find the equal commits both in master and %s", releaseBranch))
+		}
+		masterDivergedCommit, has = findEqualCommitInRepo(repo, divergedCommit)
 	}
-	if len(parts) == 3 && !hasVersion(repo, releaseBranch, "v"+versionArg) {
-		return fatalError("no such version tagged \"%s\", please check `git tag` for all tags", "v"+versionArg)
+
+	debugLog("start scanning master branch")
+	commits := getAllCommitsInBranchFrom(repo, "master", masterDivergedCommit)
+
+	pickedCommits := getAllCommitsInReleaseBranch(repo, releaseBranch)
+	pickedSet := map[string]bool{}
+	for _, c := range pickedCommits {
+		pickedSet[c.title] = true
 	}
-	return nil
+	var notPicked []*simpleCommit
+	for _, c := range commits {
+		if _, ok := pickedSet[c.title]; !ok {
+			notPicked = append(notPicked, c)
+		}
+	}
+	return notPicked
+}
+
+func getAllCommitsPickedForUpcomingRelease(repo *git.Repository, pastReleasedVer string) []*simpleCommit {
+	releaseBranch := getBranch(pastReleasedVer)
+	latestVer := getLatestVersion(repo)
+
+	var result []*simpleCommit
+	if !strings.HasPrefix(latestVer, releaseBranch) {
+		// If it's an upcoming minor release (branched from master).
+
+		// The commits between the two diverged points (1.11.0-RC1, 1.12.0-RC1 e.g)
+		// but not in the previous release branch (1.11), are certainly in the new minor version (1.12.0).
+		//
+		//                <-|/
+		//                <-|------- 1.12.0-RC1
+		//                <-|
+		// 1.12.0 commits <-| /----- 1.11.6
+		//                  |/
+		//                  |------- 1.11.0-RC1
+		//                  |
+
+		commits := getAllCommitsInReleaseBranch(repo, releaseBranch)
+		commitToVersionMap := make(map[string]string)
+		for _, c := range commits {
+			// Firstly tag all the commits in the previous release branch (1.11 in the above example),
+			// aka commits between 1.11.0-RC1 ~ 1.11.6, to "v1.11"
+			commitToVersionMap[c.title] = releaseBranch
+		}
+		divergedVer := getInitialVersionInReleaseBranch(repo, releaseBranch)
+		divergedCommit := getCommitForTag(repo, divergedVer)
+		infoLog("the diverged point of master and %s is %s: %s", releaseBranch, divergedVer, divergedCommit.ID().String()[:10])
+
+		releaseBranch = getBranch(latestVer)
+		newCommits := getAllCommitsInBranchFrom(repo, releaseBranch, divergedCommit)
+		for _, c := range newCommits {
+			// those not tagged v1.11 are certainly belong to v1.12
+			if _, ok := commitToVersionMap[c.title]; !ok {
+				result = append(result, c)
+			}
+		}
+	} else {
+		startingCommit := getCommitForTag(repo, pastReleasedVer)
+		result = getAllCommitsInBranchFrom(repo, releaseBranch, startingCommit)
+	}
+
+	return result
+}
+
+// Get commits (sorted by time order) within release branch.
+func getAllCommitsInReleaseBranch(repo *git.Repository, branch string) []*simpleCommit {
+	initialVer := getInitialVersionInReleaseBranch(repo, branch)
+	divergedCommit := getCommitForTag(repo, initialVer)
+	return getAllCommitsInBranchFrom(repo, branch, divergedCommit)
+}
+
+// Get commits starting from `startingCommit` (sorted by time order) within branch (could be a master branch).
+func getAllCommitsInBranchFrom(repo *git.Repository, branch string, startingCommit *gitobj.Commit) []*simpleCommit {
+	checkoutBranch(repoArg, branch)
+
+	currentVersion := ""
+	var versions map[string]string
+	if branch != "master" {
+		versions = mapCommitTitleToVersion(repo, branch)
+		currentVersion = "cherry-picked"
+	}
+
+	var commits []*simpleCommit
+	forEachGitLogUntil(repo, func(c *gitobj.Commit) {
+		commitTitle := getCommitTitle(c.Message)
+		if ver, ok := versions[commitTitle]; ok {
+			currentVersion = ver
+		}
+		commits = append(commits, &simpleCommit{
+			title:           commitTitle,
+			version:         currentVersion,
+			daysAfterMerged: time.Since(c.Committer.When).Hours() / 24,
+		})
+	}, startingCommit)
+	return commits
 }
