@@ -313,6 +313,8 @@ func getAllCommitsNotPicked(repo *git.Repository) []*simpleCommit {
 	return notPicked
 }
 
+// getAllCommitsPickedForUpcomingRelease returns all commits that are cherry-picked in the latest version.
+// `pastReleasedVer` must not be a pre-released version.
 func getAllCommitsPickedForUpcomingRelease(repo *git.Repository, pastReleasedVer string) []*simpleCommit {
 	releaseBranch := getBranch(pastReleasedVer)
 	latestVer := getLatestVersion(repo)

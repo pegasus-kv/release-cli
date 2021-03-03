@@ -81,7 +81,7 @@ var submitCommand *cli.Command = &cli.Command{
 			table.Append([]string{fmt.Sprintf("#%d", prID), c.title})
 			prs = append(prs, prID)
 		}
-		infoLog("submit %d commits to %s\n", len(prs), getLatestVersion(repo))
+		infoLog("submit %d commits to %s\n", len(prs), latestVer)
 		table.Render()
 		println()
 
