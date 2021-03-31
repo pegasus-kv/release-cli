@@ -31,11 +31,8 @@ var addCommand *cli.Command = &cli.Command{
 			Required:    true,
 			Destination: &branchArg,
 		},
-		cli.IntSliceFlag{
-			Name:  "pr-list",
-			Usage: "The pull-request IDs intended to be merged (233,266,257 format)",
-		},
 	},
+	ArgsUsage: "The pull-request IDs to be merged (in the format of \"233 266 257\")",
 	Action: func(c *cli.Context) error {
 		var err error
 		var repo *git.Repository

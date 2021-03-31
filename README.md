@@ -35,7 +35,7 @@ Or you can download [pre-built release](https://github.com/pegasus-kv/release-cl
 
 ## Usage
 
-Please ensure your repo that you want to make release are as clean as possible.
+Please ensure your repo where you want to make release is as clean as possible.
 It's recommended to re-clone the repo to different location with your development branch, if you have one.
 
 ### To show the pull requests that are not released, and how much time after the changes were committed (the 'Release velocity')
@@ -44,7 +44,7 @@ It's recommended to re-clone the repo to different location with your developmen
 ./release-cli show --repo '/home/wutao1/pegasus/rdsn'
 ```
 
-This command compares the master branch with the latest version (`v1.12.3` e.g), showing the commits not released.
+This command compares the master branch with the latest version (`v1.12.3` e.g), showing the commits that are not released.
 
 Outputs:
 
@@ -61,31 +61,6 @@ Outputs:
 
 If you want to view the commits that have been officially released in some version, 1.12.3 for example,
 go check the github label <https://github.com/XiaoMi/pegasus/pulls?q=is%3Apr+label%3A1.12.3>.
-
-If you want to view the commits that have been pre-released but not offically released,
-check this way:
-
-```sh
-./release-cli show --repo '/home/wutao1/pegasus/rdsn' --released
-```
-
-This is useful to check what will be released in the upcoming version.
-
-```txt
-| PR (50 RELEASED, 76 TOTAL) |                                            TITLE                                | DAYS AFTER COMMIT |             |
-...
-| XiaoMi/rdsn#446            | fix(asan): heap-use-after-free caused by using string_view in fail_point        |             19.69 |
-| XiaoMi/rdsn#418            | feat: append mlog in fixed-size blocks using log_appender                       |             27.04 |
-| XiaoMi/rdsn#436            | refactor: simplify mutation_log write_pending_mutations                         |             30.18 |
-| XiaoMi/rdsn#435            | feat: tcmalloc memory release improvements                                      |             33.10 | v1.12.3-RC3 |
-| XiaoMi/rdsn#434            | refactor(backup): move collect_backup_info to replica_backup_manager            |             35.11 |
-| XiaoMi/rdsn#432            | refactor(backup): make backup clear decoupled from on_cold_backup               |             36.20 |
-| XiaoMi/rdsn#430            | refactor(backup): delay the removal of checkpoint files produced by cold backup |             43.14 | v1.12.3-RC2 |
-| XiaoMi/rdsn#431            | refactor: move log-block-writing-related codes from mutation_log to log_block   |             46.98 | v1.12.3-RC1 |
-| XiaoMi/rdsn#429            | feat(dup): support multiple fail modes for duplication                          |             47.08 | v1.12.3-RC1 |
-| XiaoMi/rdsn#427            | refactor: move log_block class from mutation_log.h to separated file            |             49.02 | v1.12.3-RC1 |
-...
-```
 
 ### To specify the pull requests to 1.11 of Pegasus
 
@@ -111,19 +86,19 @@ you can find all 1.12.3 changes.
 
 ### To release a minor/major version (2.0 e.g.)
 
-No many differences in the precedure between minor/major release and patch release, but first you need
+There's no many differences in the procedure between a minor/major release and a patch release, but first you need
 to checkout a new branch for the version.
 
 ```sh
 cd /home/wutao1/pegasus
 git checkout master
-git reset --hard <commit> # Optional. Sometimes you may want to branch from a specific commit instead of <HEAD>.
+git reset --hard <commit> # Optional. Sometimes you may want to create the branch out from a specific commit instead of <HEAD>.
 git checkout -b v2.0
 ```
 
-Tag this version as v2.0.0-RC1 when you confirm that it is stable enough.
+Tag this version as v2.0.0-RC0 when you confirm that it is stable enough.
 
 ```sh
-git tag v2.0.0-RC1
+git tag v2.0.0-RC0
 git push origin v2.0 --tags
 ```
